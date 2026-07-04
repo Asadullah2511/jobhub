@@ -1,0 +1,1290 @@
+import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
+import '../index.css';
+
+const AdminDashboard = ({ user, logout }) => {
+    const [activeTab, setActiveTab] = useState('overview');
+    const [stats, setStats] = useState(null);
+    const [users, setUsers] = useState([]);
+    const [jobs, setJobs] = useState([]);
+    const [logs, setLogs] = useState([]);
+    const [complaints, setComplaints] = useState([]);
+    const [verifications, setVerifications] = useState([]);
+    const [contactMessages, setContactMessages] = useState([]);
+    const [internationalJobs, setInternationalJobs] = useState([]);
+    const [scholarships, setScholarships] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [actionLoading, setActionLoading] = useState(null);
+    const [confirmModal, setConfirmModal] = useState({ show: false, jobId: null, jobTitle: '' });
+
+    const API_URL = process.env.REACT_APP_API_URL;
+
+    const getHeaders = () => ({
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+    });
+
+    // ---- DATA FETCHING ----
+    const fetchStats = async () => {
+        try {
+            const res = await fetch(`${API_URL}/admin/stats`, { headers: getHeaders() });
+            const result = await res.json();
+            if (result.success) setStats(result.data);
+        } catch (err) {
+            console.error('Error fetching stats:', err);
+        }
+    };
+
+    const fetchUsers = async () => {
+        try {
+            const res = await fetch(`${API_URL}/admin/users`, { headers: getHeaders() });
+            const result = await res.json();
+            if (result.success) setUsers(result.data);
+        } catch (err) {
+            console.error('Error fetching users:', err);
+        }
+    };
+
+    const fetchJobs = async () => {
+        try {
+            const res = await fetch(`${API_URL}/admin/jobs`, { headers: getHeaders() });
+            const result = await res.json();
+            if (result.success) setJobs(result.data);
+        } catch (err) {
+            console.error('Error fetching jobs:', err);
+        }
+    };
+
+    const fetchLogs = async () => {
+        try {
+            const res = await fetch(`${API_URL}/admin/logs`, { headers: getHeaders() });
+            const result = await res.json();
+            if (result.success) setLogs(result.data);
+        } catch (err) {
+            console.error('Error fetching logs:', err);
+        }
+    };
+
+    const fetchComplaints = async () => {
+        try {
+            const res = await fetch(`${API_URL}/admin/complaints`, { headers: getHeaders() });
+            const result = await res.json();
+            if (result.success) setComplaints(result.data);
+        } catch (err) {
+            console.error('Error fetching complaints:', err);
+        }
+    };
+
+    const fetchVerifications = async () => {
+        try {
+            const res = await fetch(`${API_URL}/admin/verifications/pending`, { headers: getHeaders() });
+            const result = await res.json();
+            if (result.success) setVerifications(result.data);
+        } catch (err) {
+            console.error('Error fetching verifications:', err);
+        }
+    };
+
+    const fetchContactMessages = async () => {
+        try {
+            const res = await fetch(`${API_URL}/contact`, { headers: getHeaders() });
+            const result = await res.json();
+            if (Array.isArray(result)) setContactMessages(result);
+        } catch (err) {
+            console.error('Error fetching contact messages:', err);
+        }
+    };
+
+    const fetchInternationalJobs = async () => {
+        try {
+            const res = await fetch(`${API_URL}/international-jobs`, { headers: getHeaders() });
+            const result = await res.json();
+            if (result.success) setInternationalJobs(result.data);
+        } catch (err) {
+            console.error('Error fetching international jobs:', err);
+        }
+    };
+
+    const fetchScholarships = async () => {
+        try {
+            const res = await fetch(`${API_URL}/scholarships/admin`, { headers: getHeaders() });
+            const result = await res.json();
+            if (Array.isArray(result)) setScholarships(result);
+        } catch (err) {
+            console.error('Error fetching scholarships:', err);
+        }
+    };
+
+    // ---- COMPLAINT ACTION ----
+    const handleUpdateComplaintStatus = async (id, status) => {
+        const notes = prompt(`Enter admin notes for marking as ${status} (Optional):`);
+        setActionLoading(id);
+        try {
+            const res = await fetch(`${API_URL}/admin/complaints/${id}/status`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify({ status, admin_notes: notes })
+            });
+            const result = await res.json();
+            if (result.success) {
+                setComplaints(prev => prev.map(c => c.id === id ? { ...c, status, admin_notes: notes } : c));
+                fetchLogs();
+            }
+        } catch (err) {
+            console.error('Error updating complaint:', err);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    useEffect(() => {
+        const loadAll = async () => {
+            setLoading(true);
+            await Promise.all([fetchStats(), fetchUsers(), fetchJobs(), fetchLogs(), fetchComplaints(), fetchVerifications(), fetchContactMessages(), fetchInternationalJobs(), fetchScholarships()]);
+            setLoading(false);
+        };
+        loadAll();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ---- ACTIONS ----
+    const handleToggleSuspend = async (userId) => {
+        setActionLoading(userId);
+        try {
+            const res = await fetch(`${API_URL}/admin/users/${userId}/suspend`, {
+                method: 'PUT',
+                headers: getHeaders()
+            });
+            const result = await res.json();
+            if (result.success) {
+                setUsers(prev => prev.map(u =>
+                    u.id === userId ? { ...u, is_suspended: !u.is_suspended } : u
+                ));
+                fetchLogs(); // refresh logs
+                fetchStats(); // refresh stats
+            }
+        } catch (err) {
+            console.error('Error toggling suspend:', err);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleVerificationStatus = async (userId, status) => {
+        setActionLoading(userId);
+        try {
+            const res = await fetch(`${API_URL}/admin/verifications/${userId}/status`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify({ status })
+            });
+            const result = await res.json();
+            if (result.success) {
+                setVerifications(prev => prev.filter(v => v.user_id !== userId));
+                fetchLogs();
+            }
+        } catch (err) {
+            console.error('Error updating verification:', err);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleDeleteJob = async (jobId) => {
+        setConfirmModal({ show: false, jobId: null, jobTitle: '' });
+        setActionLoading(jobId);
+        try {
+            const res = await fetch(`${API_URL}/admin/jobs/${jobId}`, {
+                method: 'DELETE',
+                headers: getHeaders()
+            });
+            const result = await res.json();
+            if (result.success) {
+                setJobs(prev => prev.filter(j => j.id !== jobId));
+                fetchLogs();
+                fetchStats();
+            }
+        } catch (err) {
+            console.error('Error deleting job:', err);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleUpdateMessageStatus = async (id, status) => {
+        setActionLoading(id);
+        try {
+            const res = await fetch(`${API_URL}/contact/${id}/status`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify({ status })
+            });
+            const result = await res.json();
+            if (result.message) {
+                setContactMessages(prev => prev.map(m => m.id === id ? { ...m, status } : m));
+            }
+        } catch (err) {
+            console.error('Error updating message status:', err);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleDeleteInternationalJob = async (jobId) => {
+        setConfirmModal({ show: false, jobId: null, jobTitle: '', type: '' });
+        setActionLoading(jobId);
+        try {
+            const res = await fetch(`${API_URL}/international-jobs/${jobId}`, {
+                method: 'DELETE',
+                headers: getHeaders()
+            });
+            const result = await res.json();
+            if (result.success) {
+                setInternationalJobs(prev => prev.filter(j => j.id !== jobId));
+                fetchStats();
+            }
+        } catch (err) {
+            console.error('Error deleting international job:', err);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleDeleteScholarship = async (id) => {
+        setConfirmModal({ show: false, jobId: null, jobTitle: '', type: '' });
+        setActionLoading(id);
+        try {
+            const res = await fetch(`${API_URL}/scholarships/${id}`, {
+                method: 'DELETE',
+                headers: getHeaders()
+            });
+            const result = await res.json();
+            if (result.message) {
+                setScholarships(prev => prev.filter(s => s.id !== id));
+                toast.success('Scholarship deleted successfully');
+            } else {
+                toast.error(result.error || 'Failed to delete scholarship');
+            }
+        } catch (err) {
+            console.error('Error deleting scholarship:', err);
+            toast.error('Internal server error');
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    // ---- SCHOLARSHIP FORM ----
+    const [scholarshipForm, setScholarshipForm] = useState({ title: '', provider: '', description: '', deadline: '', application_link: '' });
+    const handleCreateScholarship = async (e) => {
+        e.preventDefault();
+        try {
+            const res = await fetch(`${API_URL}/scholarships`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(scholarshipForm)
+            });
+            const result = await res.json();
+            if (result.message) {
+                toast.success('Scholarship posted successfully!');
+                setScholarshipForm({ title: '', provider: '', description: '', deadline: '', application_link: '' });
+                fetchScholarships();
+            } else {
+                toast.error(result.error || 'Failed to post scholarship');
+            }
+        } catch (err) {
+            console.error('Error posting scholarship:', err);
+            toast.error('Internal server error');
+        }
+    };
+
+    // ---- HELPER ----
+    const getRoleBadgeColor = (role) => {
+        switch (role) {
+            case 'employer': return '#8b5cf6';
+            case 'blue_collar': return '#3b82f6';
+            case 'white_collar': return '#10b981';
+            case 'admin': return '#ef4444';
+            default: return '#64748b';
+        }
+    };
+
+    const filteredUsers = users.filter(u =>
+        `${u.first_name} ${u.last_name} ${u.user_id} ${u.phone} ${u.role}`
+            .toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const filteredJobs = jobs.filter(j =>
+        `${j.title} ${j.location} ${j.type} ${j.status}`
+            .toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const filteredComplaints = complaints.filter(c =>
+        `${c.reason} ${c.status} ${c.reporter?.first_name} ${c.reported_user?.first_name}`
+            .toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (loading) {
+        return (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0f172a' }}>
+                <div className="spinner"></div>
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0' }}>
+            {/* NAVBAR */}
+            <nav style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '16px 32px', background: '#1e293b', borderBottom: '1px solid #334155',
+                position: 'sticky', top: 0, zIndex: 40
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '1.5rem' }}>🛡️</span>
+                    <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: '#f8fafc' }}>
+                        Admin Dashboard
+                    </h1>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
+                        Hi, {user?.first_name || 'Admin'}
+                    </span>
+                    <button onClick={logout} style={{
+                        padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none',
+                        borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '0.85rem'
+                    }}>
+                        Logout
+                    </button>
+                </div>
+            </nav>
+
+            {/* TAB BAR */}
+            <div style={{
+                display: 'flex', gap: '0', background: '#1e293b', borderBottom: '1px solid #334155',
+                padding: '0 32px', overflowX: 'auto'
+            }}>
+                {[
+                    { key: 'overview', label: '📊 Overview', icon: '' },
+                    { key: 'users', label: '👥 Users', icon: '' },
+                    { key: 'jobs', label: '💼 Local Jobs', icon: '' },
+                    { key: 'intl_jobs', label: '🌍 Intl Jobs', icon: '' },
+                    { key: 'scholarships', label: '🎓 Scholarships', icon: '' },
+                    { key: 'complaints', label: '⚠️ Complaints', icon: '' },
+                    { key: 'verifications', label: '🛡️ Verifications', icon: '' },
+                    { key: 'inbox', label: '📥 Inbox', icon: '' },
+                    { key: 'logs', label: '📜 Logs', icon: '' }
+                ].map(tab => (
+                    <button
+                        key={tab.key}
+                        onClick={() => { setActiveTab(tab.key); setSearchTerm(''); }}
+                        style={{
+                            padding: '14px 24px',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: activeTab === tab.key ? '3px solid #3b82f6' : '3px solid transparent',
+                            color: activeTab === tab.key ? '#3b82f6' : '#94a3b8',
+                            fontWeight: activeTab === tab.key ? '600' : '400',
+                            fontSize: '0.95rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* CONTENT */}
+            <div style={{ padding: '24px 32px', maxWidth: '1400px', margin: '0 auto' }}>
+
+                {/* ======== OVERVIEW TAB ======== */}
+                {activeTab === 'overview' && stats && (
+                    <div>
+                        {/* Stats Cards */}
+                        <div style={{
+                            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                            gap: '20px', marginBottom: '32px'
+                        }}>
+                            {[
+                                { label: 'Total Users', value: stats.totalUsers, icon: '👥', color: '#3b82f6' },
+                                { label: 'Total Local Jobs', value: stats.totalJobs, icon: '💼', color: '#8b5cf6' },
+                                { label: 'Total Intl Jobs', value: stats.totalIntlJobs || 0, icon: '🌍', color: '#6366f1' },
+                                { label: 'Bookings', value: stats.totalBookings || 0, icon: '🗓️', color: '#ec4899' },
+                                { label: 'Applications', value: stats.totalApplications, icon: '📋', color: '#10b981' },
+                                { label: 'Reviews', value: stats.totalReviews, icon: '⭐', color: '#f59e0b' }
+                            ].map((card, i) => (
+                                <div key={i} style={{
+                                    background: '#1e293b', borderRadius: '12px', padding: '24px',
+                                    border: '1px solid #334155', transition: 'transform 0.2s',
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>{card.label}</p>
+                                            <h2 style={{ margin: '8px 0 0', fontSize: '2rem', fontWeight: '700', color: card.color }}>{card.value}</h2>
+                                        </div>
+                                        <span style={{ fontSize: '2.5rem' }}>{card.icon}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Role Distribution */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                            <div style={{
+                                background: '#1e293b', borderRadius: '12px', padding: '24px',
+                                border: '1px solid #334155'
+                            }}>
+                                <h3 style={{ margin: '0 0 16px', color: '#f8fafc' }}>User Distribution by Role</h3>
+                                {Object.entries(stats.roleCounts).map(([role, count]) => (
+                                    <div key={role} style={{ marginBottom: '12px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span style={{ color: '#94a3b8', fontSize: '0.85rem', textTransform: 'capitalize' }}>
+                                                {role.replace('_', ' ')}
+                                            </span>
+                                            <span style={{ color: '#f8fafc', fontWeight: '600' }}>{count}</span>
+                                        </div>
+                                        <div style={{ background: '#334155', borderRadius: '4px', height: '8px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                width: `${stats.totalUsers > 0 ? (count / stats.totalUsers * 100) : 0}%`,
+                                                height: '100%',
+                                                background: getRoleBadgeColor(role),
+                                                borderRadius: '4px',
+                                                transition: 'width 0.5s ease'
+                                            }} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{
+                                background: '#1e293b', borderRadius: '12px', padding: '24px',
+                                border: '1px solid #334155'
+                            }}>
+                                <h3 style={{ margin: '0 0 16px', color: '#f8fafc' }}>Job & Application Stats</h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div style={{ textAlign: 'center', padding: '16px', background: '#0f172a', borderRadius: '8px' }}>
+                                        <p style={{ margin: 0, color: '#10b981', fontSize: '1.5rem', fontWeight: '700' }}>{stats.activeJobs}</p>
+                                        <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: '0.8rem' }}>Active Jobs</p>
+                                    </div>
+                                    <div style={{ textAlign: 'center', padding: '16px', background: '#0f172a', borderRadius: '8px' }}>
+                                        <p style={{ margin: 0, color: '#ef4444', fontSize: '1.5rem', fontWeight: '700' }}>{stats.closedJobs}</p>
+                                        <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: '0.8rem' }}>Closed Jobs</p>
+                                    </div>
+                                </div>
+                                <h4 style={{ margin: '20px 0 12px', color: '#f8fafc', fontSize: '0.9rem' }}>Application Statuses</h4>
+                                {Object.entries(stats.appStatusCounts || {}).map(([status, count]) => (
+                                    <div key={status} style={{
+                                        display: 'flex', justifyContent: 'space-between', padding: '6px 0',
+                                        borderBottom: '1px solid #334155', fontSize: '0.85rem'
+                                    }}>
+                                        <span style={{ color: '#94a3b8' }}>{status}</span>
+                                        <span style={{ color: '#f8fafc', fontWeight: '500' }}>{count}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ======== USERS TAB ======== */}
+                {activeTab === 'users' && (
+                    <div>
+                        <div style={{ marginBottom: '20px' }}>
+                            <input
+                                type="text"
+                                placeholder="Search users by name, ID, phone, or role..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                style={{
+                                    width: '100%', maxWidth: '400px', padding: '10px 16px',
+                                    background: '#1e293b', border: '1px solid #334155', borderRadius: '8px',
+                                    color: '#e2e8f0', fontSize: '0.9rem', outline: 'none'
+                                }}
+                            />
+                        </div>
+
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                                width: '100%', borderCollapse: 'collapse',
+                                background: '#1e293b', borderRadius: '12px', overflow: 'hidden'
+                            }}>
+                                <thead>
+                                    <tr style={{ background: '#334155' }}>
+                                        {['Name', 'User ID', 'Phone', 'Role', 'Status', 'Joined', 'Action'].map(h => (
+                                            <th key={h} style={{
+                                                padding: '12px 16px', textAlign: 'left',
+                                                color: '#94a3b8', fontSize: '0.8rem', fontWeight: '600',
+                                                textTransform: 'uppercase', letterSpacing: '0.5px'
+                                            }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredUsers.map(u => (
+                                        <tr key={u.id} style={{ borderBottom: '1px solid #334155' }}>
+                                            <td style={{ padding: '12px 16px', color: '#f8fafc', fontWeight: '500' }}>
+                                                {u.first_name} {u.last_name}
+                                            </td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>{u.user_id}</td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>{u.phone || '—'}</td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem',
+                                                    fontWeight: '600', color: 'white',
+                                                    background: getRoleBadgeColor(u.role),
+                                                    textTransform: 'capitalize'
+                                                }}>
+                                                    {u.role?.replace('_', ' ')}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem',
+                                                    fontWeight: '600',
+                                                    color: u.is_suspended ? '#fca5a5' : '#86efac',
+                                                    background: u.is_suspended ? '#450a0a' : '#052e16'
+                                                }}>
+                                                    {u.is_suspended ? '🚫 Suspended' : '✅ Active'}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                {new Date(u.created_at).toLocaleDateString()}
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                {u.role !== 'admin' && (
+                                                    <button
+                                                        onClick={() => handleToggleSuspend(u.id)}
+                                                        disabled={actionLoading === u.id}
+                                                        style={{
+                                                            padding: '6px 14px', border: 'none', borderRadius: '6px',
+                                                            fontSize: '0.78rem', fontWeight: '500', cursor: 'pointer',
+                                                            background: u.is_suspended ? '#16a34a' : '#dc2626',
+                                                            color: 'white',
+                                                            opacity: actionLoading === u.id ? 0.6 : 1
+                                                        }}
+                                                    >
+                                                        {actionLoading === u.id ? '...' : u.is_suspended ? 'Unsuspend' : 'Suspend'}
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {filteredUsers.length === 0 && (
+                            <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>No users found.</p>
+                        )}
+                    </div>
+                )}
+
+                {/* ======== JOBS TAB ======== */}
+                {activeTab === 'jobs' && (
+                    <div>
+                        <div style={{ marginBottom: '20px' }}>
+                            <input
+                                type="text"
+                                placeholder="Search jobs by title, location, type, or status..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                style={{
+                                    width: '100%', maxWidth: '400px', padding: '10px 16px',
+                                    background: '#1e293b', border: '1px solid #334155', borderRadius: '8px',
+                                    color: '#e2e8f0', fontSize: '0.9rem', outline: 'none'
+                                }}
+                            />
+                        </div>
+
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                                width: '100%', borderCollapse: 'collapse',
+                                background: '#1e293b', borderRadius: '12px', overflow: 'hidden'
+                            }}>
+                                <thead>
+                                    <tr style={{ background: '#334155' }}>
+                                        {['Title', 'Type', 'Location', 'Status', 'Applicants', 'Posted', 'Action'].map(h => (
+                                            <th key={h} style={{
+                                                padding: '12px 16px', textAlign: 'left',
+                                                color: '#94a3b8', fontSize: '0.8rem', fontWeight: '600',
+                                                textTransform: 'uppercase', letterSpacing: '0.5px'
+                                            }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredJobs.map(j => (
+                                        <tr key={j.id} style={{ borderBottom: '1px solid #334155' }}>
+                                            <td style={{ padding: '12px 16px', color: '#f8fafc', fontWeight: '500' }}>{j.title}</td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem',
+                                                    fontWeight: '600', color: 'white',
+                                                    background: j.type === 'blue' ? '#3b82f6' : '#8b5cf6',
+                                                    textTransform: 'capitalize'
+                                                }}>
+                                                    {j.type === 'blue' ? 'Blue Collar' : 'White Collar'}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>{j.location}</td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem',
+                                                    fontWeight: '600',
+                                                    color: j.status === 'Active' ? '#86efac' : '#fca5a5',
+                                                    background: j.status === 'Active' ? '#052e16' : '#450a0a'
+                                                }}>
+                                                    {j.status}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                {j.applications?.[0]?.count || 0}
+                                            </td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                {new Date(j.created_at).toLocaleDateString()}
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <button
+                                                    onClick={() => setConfirmModal({ show: true, jobId: j.id, jobTitle: j.title })}
+                                                    disabled={actionLoading === j.id}
+                                                    style={{
+                                                        padding: '6px 14px', border: 'none', borderRadius: '6px',
+                                                        fontSize: '0.78rem', fontWeight: '500', cursor: 'pointer',
+                                                        background: '#dc2626', color: 'white',
+                                                        opacity: actionLoading === j.id ? 0.6 : 1
+                                                    }}
+                                                >
+                                                    {actionLoading === j.id ? '...' : '🗑 Delete'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {filteredJobs.length === 0 && (
+                            <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>No jobs found.</p>
+                        )}
+                    </div>
+                )}
+
+                {/* ======== COMPLAINTS TAB ======== */}
+                {activeTab === 'complaints' && (
+                    <div>
+                        <div style={{ marginBottom: '20px' }}>
+                            <input
+                                type="text"
+                                placeholder="Search complaints..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                style={{
+                                    width: '100%', maxWidth: '400px', padding: '10px 16px',
+                                    background: '#1e293b', border: '1px solid #334155', borderRadius: '8px',
+                                    color: '#e2e8f0', fontSize: '0.9rem', outline: 'none'
+                                }}
+                            />
+                        </div>
+
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                                width: '100%', borderCollapse: 'collapse',
+                                background: '#1e293b', borderRadius: '12px', overflow: 'hidden'
+                            }}>
+                                <thead>
+                                    <tr style={{ background: '#334155' }}>
+                                        {['Date', 'Reporter', 'Reported Target', 'Reason', 'Status', 'Actions'].map(h => (
+                                            <th key={h} style={{
+                                                padding: '12px 16px', textAlign: 'left',
+                                                color: '#94a3b8', fontSize: '0.8rem', fontWeight: '600',
+                                                textTransform: 'uppercase', letterSpacing: '0.5px'
+                                            }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredComplaints.map(c => {
+                                        let targetDisplay = 'General Issue';
+                                        let targetId = null;
+                                        if (c.reported_user) {
+                                            targetDisplay = `User: ${c.reported_user.first_name} ${c.reported_user.last_name}`;
+                                            targetId = c.reported_user.id;
+                                        } else if (c.reported_job) {
+                                            targetDisplay = `Job: ${c.reported_job.title}`;
+                                        }
+
+                                        return (
+                                            <tr key={c.id} style={{ borderBottom: '1px solid #334155' }}>
+                                                <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                    {new Date(c.created_at).toLocaleDateString()}
+                                                </td>
+                                                <td style={{ padding: '12px 16px', color: '#f8fafc', fontWeight: '500' }}>
+                                                    {c.reporter?.first_name} {c.reporter?.last_name}
+                                                </td>
+                                                <td style={{ padding: '12px 16px', color: '#fca5a5', fontWeight: '500' }}>
+                                                    {targetDisplay}
+                                                </td>
+                                                <td style={{ padding: '12px 16px', maxWidth: '300px' }}>
+                                                    <div style={{ color: '#f8fafc', fontWeight: '600', marginBottom: '4px' }}>
+                                                        {c.reason.replace(/_/g, ' ').toUpperCase()}
+                                                    </div>
+                                                    <div style={{ color: '#94a3b8', fontSize: '0.85rem', wordWrap: 'break-word' }}>
+                                                        {c.description}
+                                                    </div>
+                                                    {c.admin_notes && (
+                                                        <div style={{ marginTop: '8px', padding: '6px', background: '#0f172a', borderRadius: '4px', fontSize: '0.8rem', color: '#fbbf24', borderLeft: '3px solid #f59e0b' }}>
+                                                            <strong>Admin Note:</strong> {c.admin_notes}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td style={{ padding: '12px 16px' }}>
+                                                    <span style={{
+                                                        padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem',
+                                                        fontWeight: '600', color: 'white',
+                                                        background: c.status === 'pending' ? '#d97706' : c.status === 'resolved' ? '#16a34a' : '#475569',
+                                                        textTransform: 'capitalize'
+                                                    }}>
+                                                        {c.status}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '12px 16px' }}>
+                                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                        {c.status === 'pending' && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleUpdateComplaintStatus(c.id, 'resolved')}
+                                                                    disabled={actionLoading === c.id}
+                                                                    style={{ padding: '6px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
+                                                                >
+                                                                    Resolve
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleUpdateComplaintStatus(c.id, 'dismissed')}
+                                                                    disabled={actionLoading === c.id}
+                                                                    style={{ padding: '6px 10px', background: '#64748b', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
+                                                                >
+                                                                    Dismiss
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                        {c.reported_user && c.status === 'pending' && (
+                                                            <button
+                                                                onClick={() => handleToggleSuspend(targetId)}
+                                                                style={{ padding: '6px 10px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', opacity: actionLoading === targetId ? 0.6 : 1 }}
+                                                            >
+                                                                {actionLoading === targetId ? '...' : 'Suspend Target'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                        {filteredComplaints.length === 0 && (
+                            <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>No complaints found.</p>
+                        )}
+                    </div>
+                )}
+
+                {/* ======== VERIFICATIONS TAB ======== */}
+                {activeTab === 'verifications' && (
+                    <div>
+                        <h3 style={{ margin: '0 0 16px', color: '#f8fafc' }}>Pending ID Verifications</h3>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                                width: '100%', borderCollapse: 'collapse',
+                                background: '#1e293b', borderRadius: '12px', overflow: 'hidden'
+                            }}>
+                                <thead>
+                                    <tr style={{ background: '#334155' }}>
+                                        {['User', 'Role', 'Document', 'Actions'].map(h => (
+                                            <th key={h} style={{
+                                                padding: '12px 16px', textAlign: 'left',
+                                                color: '#94a3b8', fontSize: '0.8rem', fontWeight: '600',
+                                                textTransform: 'uppercase', letterSpacing: '0.5px'
+                                            }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {verifications.map(v => (
+                                        <tr key={v.user_id} style={{ borderBottom: '1px solid #334155' }}>
+                                            <td style={{ padding: '12px 16px', color: '#f8fafc', fontWeight: '500' }}>
+                                                {v.full_name}
+                                                <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '4px' }}>
+                                                    {v.users?.phone || v.users?.email}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem',
+                                                    fontWeight: '600', color: 'white',
+                                                    background: getRoleBadgeColor(v.role),
+                                                    textTransform: 'capitalize'
+                                                }}>
+                                                    {v.role?.replace('_', ' ')}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <a href={v.verification_document_url} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: '500' }}>
+                                                    📄 View Document
+                                                </a>
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <button
+                                                        onClick={() => handleVerificationStatus(v.user_id, 'verified')}
+                                                        disabled={actionLoading === v.user_id}
+                                                        style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+                                                    >
+                                                        {actionLoading === v.user_id ? '...' : 'Approve'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleVerificationStatus(v.user_id, 'rejected')}
+                                                        disabled={actionLoading === v.user_id}
+                                                        style={{ padding: '6px 12px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+                                                    >
+                                                        {actionLoading === v.user_id ? '...' : 'Reject'}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {verifications.length === 0 && (
+                            <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>No pending verifications.</p>
+                        )}
+                    </div>
+                )}
+
+                {/* ======== LOGS TAB ======== */}
+                {activeTab === 'logs' && (
+                    <div>
+                        <h3 style={{ margin: '0 0 16px', color: '#f8fafc' }}>System Activity Logs</h3>
+                        {logs.length === 0 ? (
+                            <div style={{
+                                textAlign: 'center', padding: '3rem', color: '#64748b',
+                                background: '#1e293b', borderRadius: '12px', border: '1px solid #334155'
+                            }}>
+                                <p style={{ fontSize: '2rem', margin: '0 0 8px' }}>📜</p>
+                                <p>No system logs yet. Admin actions will appear here.</p>
+                            </div>
+                        ) : (
+                            <div style={{
+                                background: '#1e293b', borderRadius: '12px', border: '1px solid #334155',
+                                overflow: 'hidden'
+                            }}>
+                                {logs.map((log, i) => (
+                                    <div key={log.id} style={{
+                                        padding: '16px 20px',
+                                        borderBottom: i < logs.length - 1 ? '1px solid #334155' : 'none',
+                                        display: 'flex', gap: '16px', alignItems: 'flex-start'
+                                    }}>
+                                        <span style={{
+                                            fontSize: '1.2rem', marginTop: '2px',
+                                            minWidth: '28px', textAlign: 'center'
+                                        }}>
+                                            {log.action === 'USER_SUSPENDED' ? '🚫' :
+                                             log.action === 'USER_UNSUSPENDED' ? '✅' :
+                                             log.action === 'JOB_DELETED' ? '🗑️' : '📋'}
+                                        </span>
+                                        <div style={{ flex: 1 }}>
+                                            <p style={{ margin: 0, color: '#f8fafc', fontWeight: '500', fontSize: '0.9rem' }}>
+                                                {log.action.replace(/_/g, ' ')}
+                                            </p>
+                                            <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: '0.8rem' }}>
+                                                {log.details}
+                                            </p>
+                                        </div>
+                                        <span style={{ color: '#64748b', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                            {new Date(log.created_at).toLocaleString()}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+                {/* ======== SCHOLARSHIPS TAB ======== */}
+                {activeTab === 'scholarships' && (
+                    <div>
+                        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                            {/* Post Form */}
+                            <div style={{ flex: '1 1 350px', background: '#1e293b', padding: '24px', borderRadius: '12px', border: '1px solid #334155' }}>
+                                <h3 style={{ margin: '0 0 20px', color: '#f8fafc' }}>Post a New Scholarship</h3>
+                                <form onSubmit={handleCreateScholarship} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Scholarship Title *" 
+                                        required 
+                                        value={scholarshipForm.title} 
+                                        onChange={e => setScholarshipForm({...scholarshipForm, title: e.target.value})}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0' }}
+                                    />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Provider (e.g., HEC, NUST) *" 
+                                        required 
+                                        value={scholarshipForm.provider} 
+                                        onChange={e => setScholarshipForm({...scholarshipForm, provider: e.target.value})}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0' }}
+                                    />
+                                    <textarea 
+                                        placeholder="Description & Eligibility..." 
+                                        rows="4" 
+                                        value={scholarshipForm.description} 
+                                        onChange={e => setScholarshipForm({...scholarshipForm, description: e.target.value})}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', resize: 'vertical' }}
+                                    />
+                                    <input 
+                                        type="date" 
+                                        title="Deadline" 
+                                        value={scholarshipForm.deadline} 
+                                        onChange={e => setScholarshipForm({...scholarshipForm, deadline: e.target.value})}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0' }}
+                                    />
+                                    <input 
+                                        type="url" 
+                                        placeholder="External Application Link (Optional)" 
+                                        value={scholarshipForm.application_link} 
+                                        onChange={e => setScholarshipForm({...scholarshipForm, application_link: e.target.value})}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0' }}
+                                    />
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>* Leave link blank to accept internal applications.</p>
+                                    <button 
+                                        type="submit" 
+                                        style={{ padding: '12px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                                    >
+                                        Post Scholarship
+                                    </button>
+                                </form>
+                            </div>
+
+                            {/* List */}
+                            <div style={{ flex: '2 1 500px' }}>
+                                <h3 style={{ margin: '0 0 20px', color: '#f8fafc' }}>Active Scholarships ({scholarships.length})</h3>
+                                {scholarships.length === 0 ? (
+                                    <p style={{ color: '#94a3b8' }}>No scholarships posted yet.</p>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        {scholarships.map(s => (
+                                            <div key={s.id} style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <div>
+                                                    <h4 style={{ margin: '0 0 8px', color: '#f8fafc', fontSize: '1.2rem' }}>{s.title}</h4>
+                                                    <p style={{ margin: '0 0 12px', color: '#3b82f6', fontWeight: '600' }}>{s.provider}</p>
+                                                    <p style={{ margin: '0 0 12px', color: '#94a3b8', fontSize: '0.9rem', maxWidth: '600px' }}>{s.description}</p>
+                                                    <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                                                        {s.deadline && <span>📅 Deadline: {new Date(s.deadline).toLocaleDateString()}</span>}
+                                                        {s.application_link ? (
+                                                            <span style={{ color: '#10b981' }}>🔗 External Link Provided</span>
+                                                        ) : (
+                                                            <span style={{ color: '#f59e0b' }}>📥 Internal Applications</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setConfirmModal({ show: true, jobId: s.id, jobTitle: s.title, type: 'scholarship' })}
+                                                    disabled={actionLoading === s.id}
+                                                    style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer' }}
+                                                >
+                                                    {actionLoading === s.id ? 'Deleting...' : 'Delete'}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ======== INTERNATIONAL JOBS TAB ======== */}
+                {activeTab === 'intl_jobs' && (
+                    <div>
+                        <div style={{ marginBottom: '20px' }}>
+                            <input
+                                type="text"
+                                placeholder="Search international jobs by title, location, or employer..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                style={{
+                                    width: '100%', maxWidth: '400px', padding: '10px 16px',
+                                    background: '#1e293b', border: '1px solid #334155', borderRadius: '8px',
+                                    color: '#e2e8f0', fontSize: '0.9rem', outline: 'none'
+                                }}
+                            />
+                        </div>
+
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                                width: '100%', borderCollapse: 'collapse',
+                                background: '#1e293b', borderRadius: '12px', overflow: 'hidden'
+                            }}>
+                                <thead>
+                                    <tr style={{ background: '#334155' }}>
+                                        {['Title', 'Country', 'Employer', 'Visa Sponsored', 'Posted', 'Action'].map(h => (
+                                            <th key={h} style={{
+                                                padding: '12px 16px', textAlign: 'left',
+                                                color: '#94a3b8', fontSize: '0.8rem', fontWeight: '600',
+                                                textTransform: 'uppercase', letterSpacing: '0.5px'
+                                            }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {internationalJobs.filter(j =>
+                                        `${j.title} ${j.country} ${j.employer?.first_name}`.toLowerCase().includes(searchTerm.toLowerCase())
+                                    ).map(j => (
+                                        <tr key={j.id} style={{ borderBottom: '1px solid #334155' }}>
+                                            <td style={{ padding: '12px 16px', color: '#f8fafc', fontWeight: '500' }}>{j.title}</td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>{j.country}</td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                {j.employer ? `${j.employer.first_name} ${j.employer.last_name || ''}` : 'Unknown'}
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem',
+                                                    fontWeight: '600', color: j.visa_sponsored ? '#86efac' : '#94a3b8',
+                                                    background: j.visa_sponsored ? '#052e16' : '#334155'
+                                                }}>
+                                                    {j.visa_sponsored ? '✅ Yes' : '❌ No'}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                {new Date(j.created_at).toLocaleDateString()}
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <button
+                                                    onClick={() => setConfirmModal({ show: true, jobId: j.id, jobTitle: j.title, type: 'intl' })}
+                                                    disabled={actionLoading === j.id}
+                                                    style={{
+                                                        padding: '6px 14px', border: 'none', borderRadius: '6px',
+                                                        fontSize: '0.78rem', fontWeight: '500', cursor: 'pointer',
+                                                        background: '#dc2626', color: 'white',
+                                                        opacity: actionLoading === j.id ? 0.6 : 1
+                                                    }}
+                                                >
+                                                    {actionLoading === j.id ? '...' : '🗑 Delete'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {internationalJobs.length === 0 && (
+                            <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>No international jobs found.</p>
+                        )}
+                    </div>
+                )}
+
+                {/* ======== INBOX TAB ======== */}
+                {activeTab === 'inbox' && (
+                    <div>
+                        <div style={{ marginBottom: '20px' }}>
+                            <input
+                                type="text"
+                                placeholder="Search messages by name, email, or content..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                style={{
+                                    width: '100%', maxWidth: '400px', padding: '10px 16px',
+                                    background: '#1e293b', border: '1px solid #334155', borderRadius: '8px',
+                                    color: '#e2e8f0', fontSize: '0.9rem', outline: 'none'
+                                }}
+                            />
+                        </div>
+
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                                width: '100%', borderCollapse: 'collapse',
+                                background: '#1e293b', borderRadius: '12px', overflow: 'hidden'
+                            }}>
+                                <thead>
+                                    <tr style={{ background: '#334155' }}>
+                                        {['Date', 'Sender', 'Message', 'Status', 'Actions'].map(h => (
+                                            <th key={h} style={{
+                                                padding: '12px 16px', textAlign: 'left',
+                                                color: '#94a3b8', fontSize: '0.8rem', fontWeight: '600',
+                                                textTransform: 'uppercase', letterSpacing: '0.5px'
+                                            }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {contactMessages.filter(m =>
+                                        `${m.name} ${m.email} ${m.message}`.toLowerCase().includes(searchTerm.toLowerCase())
+                                    ).map(m => (
+                                        <tr key={m.id} style={{ borderBottom: '1px solid #334155', background: (m.status || 'unread').toLowerCase() === 'unread' ? 'rgba(59, 130, 246, 0.05)' : 'transparent' }}>
+                                            <td style={{ padding: '12px 16px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                {new Date(m.created_at).toLocaleDateString()}
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <div style={{ color: '#f8fafc', fontWeight: '500' }}>{m.name}</div>
+                                                <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{m.email}</div>
+                                                <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{m.phone || '—'}</div>
+                                            </td>
+                                            <td style={{ padding: '12px 16px', maxWidth: '300px' }}>
+                                                <div style={{ color: '#cbd5e1', fontSize: '0.85rem', wordWrap: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                                    {m.message}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <span style={{
+                                                    padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem',
+                                                    fontWeight: '600', color: 'white', textTransform: 'capitalize',
+                                                    background: (m.status || 'unread').toLowerCase() === 'unread' ? '#d97706' : (m.status || '').toLowerCase() === 'resolved' ? '#16a34a' : '#3b82f6'
+                                                }}>
+                                                    {m.status || 'Unread'}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    {(m.status || '').toLowerCase() !== 'resolved' && (
+                                                        <button
+                                                            onClick={() => handleUpdateMessageStatus(m.id, 'Resolved')}
+                                                            disabled={actionLoading === m.id}
+                                                            style={{ padding: '6px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
+                                                        >
+                                                            Resolve
+                                                        </button>
+                                                    )}
+                                                    {(m.status || 'unread').toLowerCase() === 'unread' && (
+                                                        <button
+                                                            onClick={() => handleUpdateMessageStatus(m.id, 'Read')}
+                                                            disabled={actionLoading === m.id}
+                                                            style={{ padding: '6px 10px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
+                                                        >
+                                                            Mark Read
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {contactMessages.length === 0 && (
+                            <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>No messages found.</p>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Delete Confirmation Modal */}
+            {confirmModal.show && (
+                <div
+                    onClick={() => setConfirmModal({ show: false, jobId: null, jobTitle: '' })}
+                    style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(4px)',
+                        display: 'flex', justifyContent: 'center', alignItems: 'center',
+                        zIndex: 100, animation: 'fadeIn 0.2s ease'
+                    }}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            background: '#1e293b', borderRadius: '16px', padding: '32px',
+                            maxWidth: '420px', width: '90%', border: '1px solid #334155',
+                            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
+                            animation: 'slideUp 0.25s ease'
+                        }}
+                    >
+                        {/* Warning Icon */}
+                        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                            <div style={{
+                                width: '64px', height: '64px', borderRadius: '50%',
+                                background: 'rgba(239, 68, 68, 0.15)', display: 'flex',
+                                alignItems: 'center', justifyContent: 'center',
+                                margin: '0 auto', border: '2px solid rgba(239, 68, 68, 0.3)'
+                            }}>
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+                                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                </svg>
+                            </div>
+                        </div>
+
+                        {/* Title & Description */}
+                        <h3 style={{ margin: '0 0 8px', textAlign: 'center', color: '#f8fafc', fontSize: '1.25rem', fontWeight: '700' }}>
+                            {confirmModal.type === 'scholarship' ? 'Delete Scholarship?' : 'Delete Job Posting?'}
+                        </h3>
+                        <p style={{ margin: '0 0 8px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem', lineHeight: '1.5' }}>
+                            You are about to permanently delete:
+                        </p>
+                        <p style={{
+                            margin: '0 0 20px', textAlign: 'center', color: '#f8fafc',
+                            fontSize: '1rem', fontWeight: '600',
+                            padding: '8px 16px', background: '#0f172a', borderRadius: '8px',
+                            border: '1px solid #334155'
+                        }}>
+                            "{confirmModal.jobTitle}"
+                        </p>
+                        <p style={{ margin: '0 0 24px', textAlign: 'center', color: '#f87171', fontSize: '0.8rem' }}>
+                            ⚠️ This action cannot be undone. All pending applications will also be rejected.
+                        </p>
+
+                        {/* Action Buttons */}
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setConfirmModal({ show: false, jobId: null, jobTitle: '' })}
+                                style={{
+                                    flex: 1, padding: '12px', background: '#334155', color: '#e2e8f0',
+                                    border: 'none', borderRadius: '10px', fontSize: '0.9rem',
+                                    fontWeight: '600', cursor: 'pointer', transition: 'background 0.2s'
+                                }}
+                                onMouseOver={e => e.target.style.background = '#475569'}
+                                onMouseOut={e => e.target.style.background = '#334155'}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (confirmModal.type === 'intl') {
+                                        handleDeleteInternationalJob(confirmModal.jobId);
+                                    } else if (confirmModal.type === 'scholarship') {
+                                        handleDeleteScholarship(confirmModal.jobId);
+                                    } else {
+                                        handleDeleteJob(confirmModal.jobId);
+                                    }
+                                }}
+                                style={{
+                                    flex: 1, padding: '12px', background: '#dc2626', color: 'white',
+                                    border: 'none', borderRadius: '10px', fontSize: '0.9rem',
+                                    fontWeight: '600', cursor: 'pointer', transition: 'background 0.2s',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                                }}
+                                onMouseOver={e => e.target.style.background = '#b91c1c'}
+                                onMouseOut={e => e.target.style.background = '#dc2626'}
+                            >
+                                🗑 Delete Job
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Animations */}
+            <style>{`
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes slideUp {
+                    from { opacity: 0; transform: translateY(20px) scale(0.95); }
+                    to { opacity: 1; transform: translateY(0) scale(1); }
+                }
+            `}</style>
+        </div>
+    );
+};
+
+export default AdminDashboard;
