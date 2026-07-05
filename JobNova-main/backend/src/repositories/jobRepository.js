@@ -1,246 +1,252 @@
-const { supabaseAdmin: supabase } = require('../config/supabase');
+const { query } = require('../config/database');
 
 const jobRepository = {
-    createJob: async (jobData) => {
-        const { data, error } = await supabase
-            .from('jobs')
-            .insert([jobData])
-            .select();
+  createJob: async (jobData) => {
+    const keys = Object.keys(jobData);
+    const cols = keys;
+    const vals = keys.map(k => jobData[k]);
+    const placeholders = vals.map((_, i) => `$${i + 1}`);
+    const result = await query(
+      `INSERT INTO jobs (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`,
+      vals
+    );
+    return result.rows[0];
+  },
 
-        if (error) throw error;
-        return data[0];
-    },
+  deleteJob: async (jobId) => {
+    await query("UPDATE jobs SET status = 'Deleted' WHERE id = $1", [jobId]);
+    await query(
+      `UPDATE applications SET status = 'Rejected'
+       WHERE job_id = $1 AND status NOT IN ('Completed', 'In Progress')`,
+      [jobId]
+    );
+    return true;
+  },
 
-    deleteJob: async (jobId) => {
-        // 1. Soft-delete the job
-        const { error } = await supabase
-            .from('jobs')
-            .update({ status: 'Deleted' })
-            .eq('id', jobId);
+  getJobs: async (type, searchWords = [], pagination = null) => {
+    let sql = "SELECT * FROM jobs WHERE status = 'Active'";
+    const params = [];
+    let paramIndex = 1;
 
-        if (error) throw error;
-
-        // 2. Reject all non-completed applications for this job
-        //    so they don't linger as "Pending" on workers' dashboards
-        const { error: appError } = await supabase
-            .from('applications')
-            .update({ status: 'Rejected' })
-            .eq('job_id', jobId)
-            .not('status', 'in', '("Completed","In Progress")');
-
-        if (appError) console.error('Error rejecting applications on job delete:', appError);
-
-        return true;
-    },
-
-    getJobs: async (type, searchWords = []) => {
-        let query = supabase.from('jobs').select('*').eq('status', 'Active').order('created_at', { ascending: false });
-        if (type) query = query.eq('type', type);
-
-        if (searchWords && searchWords.length > 0) {
-            // Apply a massive OR clause for each translated word on the title, location, description, and skills
-            const orConditions = searchWords.map(word => 
-                `title.ilike.%${word}%,location.ilike.%${word}%,description.ilike.%${word}%,skills.ilike.%${word}%`
-            ).join(',');
-            query = query.or(orConditions);
-        }
-
-        const { data, error } = await query;
-        if (error) throw error;
-
-        // Fetch corresponding profiles manually
-        if (data && data.length > 0) {
-            const employerIds = [...new Set(data.map(job => job.employer_id).filter(Boolean))];
-            if (employerIds.length > 0) {
-                const { data: profilesData } = await supabase
-                    .from('profiles')
-                    .select('user_id, full_name, phone, company_name, bio, location, experience_years, skills')
-                    .in('user_id', employerIds);
-                
-                if (profilesData) {
-                    const profileMap = {};
-                    profilesData.forEach(p => profileMap[p.user_id] = p);
-                    data.forEach(job => {
-                        job.profiles = profileMap[job.employer_id] || null;
-                    });
-                }
-            }
-        }
-        return data;
-    },
-
-
-    findApplication: async (jobId, applicantId) => {
-        const { data, error } = await supabase
-            .from('applications')
-            .select('*')
-            .eq('job_id', jobId)
-            .eq('applicant_id', applicantId)
-            .single();
-
-        if (error && error.code !== 'PGRST116') throw error;
-        return data;
-    },
-
-    createApplication: async (applicationData) => {
-        const { data, error } = await supabase
-            .from('applications')
-            .insert([applicationData])
-            .select();
-
-        if (error) throw error;
-        return data[0];
-    },
-
-    getMyJobs: async (employerId) => {
-        const { data, error } = await supabase
-            .from('jobs')
-            .select('*, applications(count)')
-            .eq('employer_id', employerId)
-            .neq('status', 'Deleted')
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        return data;
-    },
-
-    getNearbyJobs: async (lat, lng, radius, searchWords = []) => {
-        // Fetch all active jobs first
-        let query = supabase
-            .from('jobs')
-            .select('*')
-            .eq('status', 'Active')
-            .eq('type', 'blue')
-            .not('latitude', 'is', null)
-            .not('longitude', 'is', null);
-
-        if (searchWords && searchWords.length > 0) {
-            const orConditions = searchWords.map(word => 
-                `title.ilike.%${word}%,location.ilike.%${word}%,description.ilike.%${word}%,skills.ilike.%${word}%`
-            ).join(',');
-            query = query.or(orConditions);
-        }
-
-        const { data, error } = await query;
-
-        if (error) throw error;
-
-        // Haversine formula helper
-        const calculateDistance = (lat1, lon1, lat2, lon2) => {
-            const R = 6371; // Earth radius in km
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = 
-                Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c; // Distance in km
-        };
-
-        // Filter and attach distance
-        const nearbyJobs = data.filter(job => {
-            const distance = calculateDistance(lat, lng, job.latitude, job.longitude);
-            if (distance <= radius) {
-                job.distance = distance.toFixed(1);
-                return true;
-            }
-            return false;
-        }).sort((a, b) => a.distance - b.distance); // Sort by closest
-
-        // Fetch corresponding profiles manually for the filtered nearby jobs
-        if (nearbyJobs.length > 0) {
-            const employerIds = [...new Set(nearbyJobs.map(job => job.employer_id).filter(Boolean))];
-            if (employerIds.length > 0) {
-                const { data: profilesData } = await supabase
-                    .from('profiles')
-                    .select('user_id, full_name, phone, company_name, bio, location, experience_years, skills')
-                    .in('user_id', employerIds);
-                
-                if (profilesData) {
-                    const profileMap = {};
-                    profilesData.forEach(p => profileMap[p.user_id] = p);
-                    nearbyJobs.forEach(job => {
-                        job.profiles = profileMap[job.employer_id] || null;
-                    });
-                }
-            }
-        }
-        
-        return nearbyJobs;
-    },
-
-    getJobById: async (jobId) => {
-        const { data, error } = await supabase
-            .from('jobs')
-            .select('*')
-            .eq('id', jobId)
-            .single();
-
-        if (error && error.code !== 'PGRST116') throw error;
-        return data;
-    },
-
-    getJobApplications: async (jobId) => {
-        const { data, error } = await supabase
-            .from('applications')
-            .select('*')
-            .eq('job_id', jobId);
-
-        if (error) throw error;
-        return data;
-    },
-
-    getApplicationById: async (applicationId) => {
-        const { data, error } = await supabase
-            .from('applications')
-            .select('*, jobs(*)')
-            .eq('id', applicationId)
-            .single();
-
-        if (error && error.code !== 'PGRST116') throw error;
-        return data;
-    },
-
-    updateApplicationStatus: async (applicationId, status) => {
-        const { data, error } = await supabase
-            .from('applications')
-            .update({ status })
-            .eq('id', applicationId)
-            .select();
-
-        if (error) throw error;
-        return data[0];
-    },
-
-    getWorkerApplications: async (userId) => {
-        const { data, error } = await supabase
-            .from('applications')
-            .select('*, jobs(*)')
-            .eq('applicant_id', userId)
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        // Filter out irrelevant applications securely on the backend
-        const filteredData = data.filter(app => {
-            // Hide explicitly rejected applications
-            if (app.status === 'Rejected') return false;
-            
-            // Handle one-to-one or one-to-many parsing behavior of Supabase
-            const jobStatus = Array.isArray(app.jobs) ? app.jobs[0]?.status : app.jobs?.status;
-            
-            // If job doesn't exist (hard deleted previously) OR job is soft-deleted
-            // Hide it UNLESS the worker successfully completed it.
-            if ((!app.jobs || jobStatus === 'Deleted') && app.status !== 'Completed') {
-                return false;
-            }
-
-            return true;
-        });
-
-        return filteredData;
+    if (type) {
+      sql += ` AND type = $${paramIndex}`;
+      params.push(type);
+      paramIndex++;
     }
+
+    if (searchWords && searchWords.length > 0) {
+      const conditions = searchWords.map(word => {
+        const likeClauses = ['title', 'location', 'description', 'skills']
+          .map(col => `${col} ILIKE $${paramIndex}`);
+        paramIndex++;
+        params.push(`%${word}%`);
+        return `(${likeClauses.join(' OR ')})`;
+      });
+      sql += ` AND (${conditions.join(' OR ')})`;
+    }
+
+    sql += ' ORDER BY created_at DESC';
+
+    // Count total for pagination
+    let total = 0;
+    if (pagination) {
+      const countSql = sql.replace('SELECT *', 'SELECT COUNT(*)');
+      const countResult = await query(countSql, params);
+      total = parseInt(countResult.rows[0].count);
+
+      // Add pagination
+      const limit = Math.min(pagination.limit, 100);
+      const offset = (pagination.page - 1) * limit;
+      sql += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+    }
+
+    const result = await query(sql, params);
+    const data = result.rows;
+
+    if (data && data.length > 0) {
+      const employerIds = [...new Set(data.map(job => job.employer_id).filter(Boolean))];
+      if (employerIds.length > 0) {
+        const placeholders = employerIds.map((_, i) => `$${i + 1}`);
+        const profResult = await query(
+          `SELECT user_id, full_name, phone, company_name, bio, location, experience_years, skills
+           FROM profiles WHERE user_id IN (${placeholders.join(',')})`,
+          employerIds
+        );
+        const profileMap = {};
+        profResult.rows.forEach(p => profileMap[p.user_id] = p);
+        data.forEach(job => {
+          job.profiles = profileMap[job.employer_id] || null;
+        });
+      }
+    }
+
+    if (pagination) {
+      return {
+        jobs: data,
+        pagination: {
+          page: pagination.page,
+          limit: Math.min(pagination.limit, 100),
+          total
+        }
+      };
+    }
+
+    return data;
+  },
+
+  findApplication: async (jobId, applicantId) => {
+    const result = await query(
+      'SELECT * FROM applications WHERE job_id = $1 AND applicant_id = $2',
+      [jobId, applicantId]
+    );
+    return result.rows[0] || null;
+  },
+
+  createApplication: async (applicationData) => {
+    const keys = Object.keys(applicationData);
+    const cols = keys;
+    const vals = keys.map(k => applicationData[k]);
+    const placeholders = vals.map((_, i) => `$${i + 1}`);
+    const result = await query(
+      `INSERT INTO applications (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`,
+      vals
+    );
+    return result.rows[0];
+  },
+
+  getMyJobs: async (employerId) => {
+    const result = await query(
+      `SELECT j.*,
+              (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) AS applications_count
+       FROM jobs j
+       WHERE j.employer_id = $1 AND j.status != 'Deleted'
+       ORDER BY j.created_at DESC`,
+      [employerId]
+    );
+    return result.rows;
+  },
+
+  getNearbyJobs: async (lat, lng, radius, searchWords = []) => {
+    let sql = `SELECT * FROM jobs WHERE status = 'Active' AND type = 'blue'
+               AND latitude IS NOT NULL AND longitude IS NOT NULL`;
+    const params = [];
+    let paramIndex = 1;
+
+    if (searchWords && searchWords.length > 0) {
+      const conditions = searchWords.map(word => {
+        const likeClauses = ['title', 'location', 'description', 'skills']
+          .map(col => `${col} ILIKE $${paramIndex}`);
+        paramIndex++;
+        params.push(`%${word}%`);
+        return `(${likeClauses.join(' OR ')})`;
+      });
+      sql += ` AND (${conditions.join(' OR ')})`;
+    }
+
+    const result = await query(sql, params);
+    const data = result.rows;
+
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
+
+    const nearbyJobs = data.filter(job => {
+      const distance = calculateDistance(lat, lng, job.latitude, job.longitude);
+      if (distance <= radius) {
+        job.distance = distance.toFixed(1);
+        return true;
+      }
+      return false;
+    }).sort((a, b) => a.distance - b.distance);
+
+    if (nearbyJobs.length > 0) {
+      const employerIds = [...new Set(nearbyJobs.map(job => job.employer_id).filter(Boolean))];
+      if (employerIds.length > 0) {
+        const placeholders = employerIds.map((_, i) => `$${i + 1}`);
+        const profResult = await query(
+          `SELECT user_id, full_name, phone, company_name, bio, location, experience_years, skills
+           FROM profiles WHERE user_id IN (${placeholders.join(',')})`,
+          employerIds
+        );
+        const profileMap = {};
+        profResult.rows.forEach(p => profileMap[p.user_id] = p);
+        nearbyJobs.forEach(job => {
+          job.profiles = profileMap[job.employer_id] || null;
+        });
+      }
+    }
+
+    return nearbyJobs;
+  },
+
+  getJobById: async (jobId) => {
+    const result = await query('SELECT * FROM jobs WHERE id = $1', [jobId]);
+    return result.rows[0] || null;
+  },
+
+  getJobApplications: async (jobId) => {
+    const result = await query('SELECT * FROM applications WHERE job_id = $1', [jobId]);
+    return result.rows;
+  },
+
+  getApplicationById: async (applicationId) => {
+    const result = await query(
+      `SELECT a.*, row_to_json(j.*) AS jobs
+       FROM applications a
+       LEFT JOIN jobs j ON j.id = a.job_id
+       WHERE a.id = $1`,
+      [applicationId]
+    );
+    if (!result.rows[0]) return null;
+    const app = result.rows[0];
+    app.jobs = app.jobs || {};
+    return app;
+  },
+
+  updateApplicationStatus: async (applicationId, status) => {
+    const result = await query(
+      'UPDATE applications SET status = $1 WHERE id = $2 RETURNING *',
+      [status, applicationId]
+    );
+    return result.rows[0];
+  },
+
+  getWorkerApplications: async (userId) => {
+    const result = await query(
+      `SELECT a.*, row_to_json(j.*) AS jobs
+       FROM applications a
+       LEFT JOIN jobs j ON j.id = a.job_id
+       WHERE a.applicant_id = $1
+       ORDER BY a.created_at DESC`,
+      [userId]
+    );
+
+    const data = result.rows.map(app => {
+      if (typeof app.jobs === 'string') {
+        try { app.jobs = JSON.parse(app.jobs); } catch (e) { app.jobs = {}; }
+      }
+      return app;
+    });
+
+    const filteredData = data.filter(app => {
+      if (app.status === 'Rejected') return false;
+      const jobStatus = app.jobs?.status;
+      if ((!app.jobs || jobStatus === 'Deleted') && app.status !== 'Completed') {
+        return false;
+      }
+      return true;
+    });
+
+    return filteredData;
+  }
 };
 
 module.exports = jobRepository;

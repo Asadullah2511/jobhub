@@ -1,73 +1,42 @@
 const authService = require('../services/authService');
+const { asyncHandler } = require('../middleware/errorHandler');
+const { success, created } = require('../utils/responseHelper');
 
 const authController = {
-    // Register: User ID + Phone + Password + Role + Names
-    register: async (req, res) => {
-        try {
-            const { user_id, phone, password, role, first_name, last_name } = req.body;
+    register: asyncHandler(async (req, res) => {
+        const { user_id, phone, password, role, first_name, last_name } = req.body;
 
-            const { user, token } = await authService.registerUser({
-                user_id, phone, password, role, first_name, last_name
-            });
+        const { user, token } = await authService.registerUser({
+            user_id, phone, password, role, first_name, last_name
+        });
 
-            res.status(201).json({
-                success: true,
-                data: { user, token },
-                message: 'Registration successful'
-            });
-        } catch (error) {
-            res.status(400).json({ success: false, message: error.message });
-        }
-    },
+        return created(res, { user, token }, 'Registration successful');
+    }),
 
-    // Login: User ID / Phone + Password
-    login: async (req, res) => {
-        try {
-            const { identifier, password } = req.body; // identifier can be user_id or phone
+    login: asyncHandler(async (req, res) => {
+        const { identifier, password } = req.body;
 
-            const { user, token } = await authService.loginUser({ identifier, password });
+        const { user, token } = await authService.loginUser({ identifier, password });
 
-            res.json({
-                success: true,
-                data: { user, token },
-                message: 'Login successful'
-            });
+        return success(res, { user, token }, 'Login successful');
+    }),
 
-        } catch (error) {
-            res.status(401).json({ success: false, message: error.message });
-        }
-    },
+    getProfile: asyncHandler(async (req, res) => {
+        const { user } = req;
+        return success(res, user);
+    }),
 
-    // Get Profile (Protected)
-    getProfile: async (req, res) => {
-        try {
-            // Usually req.user is populated by an authMiddleware
-            const { user } = req;
-            res.json({ success: true, data: user });
-        } catch (error) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    },
+    forgotPassword: asyncHandler(async (req, res) => {
+        const { email } = req.body;
+        await authService.forgotPassword(email);
+        return success(res, null, 'If an account with that email exists, a password reset link has been sent.');
+    }),
 
-    forgotPassword: async (req, res) => {
-        try {
-            const { email } = req.body;
-            await authService.forgotPassword(email);
-            res.json({ success: true, message: 'If an account with that email exists, a password reset link has been sent.' });
-        } catch (error) {
-            res.status(400).json({ success: false, message: error.message });
-        }
-    },
-
-    resetPassword: async (req, res) => {
-        try {
-            const { token, new_password } = req.body;
-            await authService.resetPassword(token, new_password);
-            res.json({ success: true, message: 'Password has been reset successfully.' });
-        } catch (error) {
-            res.status(400).json({ success: false, message: error.message });
-        }
-    }
+    resetPassword: asyncHandler(async (req, res) => {
+        const { token, new_password } = req.body;
+        await authService.resetPassword(token, new_password);
+        return success(res, null, 'Password has been reset successfully.');
+    })
 };
 
 module.exports = authController;

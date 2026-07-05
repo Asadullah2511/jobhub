@@ -3,7 +3,11 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const compression = require('compression');
 const { testConnection } = require('./config/supabase');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 if (!process.env.JWT_SECRET) {
     console.error('FATAL: JWT_SECRET environment variable is not set.');
@@ -12,20 +16,50 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
+// Security Headers
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: isDevelopment ? false : undefined
+}));
 
 // CORS configuration
 const allowedOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',')
     : ['http://localhost:3000', 'http://localhost:5000'];
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Request logging
+if (isDevelopment) {
+    app.use(morgan('dev'));
+} else {
+    app.use(morgan('combined'));
+}
+
+// Compression
+app.use(compression());
 
 // Rate Limiting
 const { globalLimiter, apiLimiter } = require('./middleware/rateLimiter');
 app.use(globalLimiter);
 app.use('/api/v1', apiLimiter);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -61,7 +95,7 @@ app.use('/api/international-jobs', require('./routes/internationalJobRoutes'));
 app.use('/api/time-exchange', require('./routes/timeExchangeRoutes'));
 app.use('/api/bookings', require('./routes/bookingRoutes'));
 
-// API Versioning — v1 (parallel mount, same handlers)
+// API Versioning ï¿½ v1 (parallel mount, same handlers)
 app.use('/api/v1', require('./routes/v1'));
 
 // Swagger/OpenAPI docs
@@ -71,14 +105,11 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customSiteTitle: 'JobNova API Docs'
 }));
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({
-        status: 'error',
-        message: 'Something went wrong!'
-    });
-});
+// 404 handler (must be before error handler)
+app.use(notFoundHandler);
+
+// Global error handler (must be last)
+app.use(errorHandler);
 
 // Create HTTP server for Socket.IO binding
 const server = http.createServer(app);
@@ -98,7 +129,7 @@ setupSocket(io);
 // Start server (only when running locally, not on Vercel)
 if (process.env.VERCEL !== '1') {
     const startServer = async () => {
-        console.log('Testing Supabase connection...');
+        console.log('Testing PostgreSQL connection...');
         await testConnection();
 
         server.listen(PORT, () => {

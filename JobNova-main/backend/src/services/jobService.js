@@ -2,20 +2,29 @@ const jobRepository = require('../repositories/jobRepository');
 const profileRepository = require('../repositories/profileRepository');
 const { matchJobs } = require('../services/matchingService');
 const notificationService = require('./notificationService');
+const {
+    NotFoundError,
+    AuthorizationError,
+    ConflictError,
+    ValidationError
+} = require('../utils/errors');
 
 const jobService = {
     createJob: async (jobData) => {
         return await jobRepository.createJob(jobData);
     },
 
-    getJobs: async (type, searchWords = []) => {
-        return await jobRepository.getJobs(type, searchWords);
+    getJobs: async (type, searchWords = [], pagination = null) => {
+        return await jobRepository.getJobs(type, searchWords, pagination);
     },
 
     deleteJob: async (jobId, employerId) => {
         const job = await jobRepository.getJobById(jobId);
-        if (!job || job.employer_id !== employerId) {
-            throw new Error('Unauthorized or Job not found');
+        if (!job) {
+            throw new NotFoundError('Job not found');
+        }
+        if (job.employer_id !== employerId) {
+            throw new AuthorizationError('You are not authorized to delete this job');
         }
         return await jobRepository.deleteJob(jobId);
     },
@@ -24,7 +33,7 @@ const jobService = {
         const profile = await profileRepository.findByUserId(userId);
 
         if (!profile) {
-            throw new Error('Profile not found. Please complete your profile to get matches.');
+            throw new NotFoundError('Profile not found. Please complete your profile to get matches.');
         }
 
         const jobType = requestedType || (profile.role === 'Blue Collar' ? 'blue' : 'white');
@@ -32,14 +41,16 @@ const jobService = {
     },
 
     getNearbyJobs: async (lat, lng, radiusKm = 10, searchWords = []) => {
-        if (!lat || !lng) throw new Error('Latitude and longitude are required');
+        if (!lat || !lng) {
+            throw new ValidationError('Latitude and longitude are required');
+        }
         return await jobRepository.getNearbyJobs(parseFloat(lat), parseFloat(lng), parseFloat(radiusKm), searchWords);
     },
 
     applyForJob: async (jobId, applicantId, resumeUrl, coverLetter) => {
         const existing = await jobRepository.findApplication(jobId, applicantId);
         if (existing) {
-            throw new Error('You have already applied for this job');
+            throw new ConflictError('You have already applied for this job');
         }
 
         const application = await jobRepository.createApplication({

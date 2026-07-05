@@ -1,194 +1,139 @@
-const { supabaseAdmin: supabase } = require('../config/supabase');
+const { query } = require('../config/database');
 
 const adminRepository = {
-    // ---- USER MANAGEMENT ----
-    getAllUsers: async () => {
-        const { data, error } = await supabase
-            .from('users')
-            .select('id, user_id, phone, role, first_name, last_name, is_profile_completed, is_suspended, created_at')
-            .order('created_at', { ascending: false });
+  getAllUsers: async () => {
+    const result = await query(
+      'SELECT id, user_id, phone, role, first_name, last_name, is_profile_completed, is_suspended, created_at FROM users ORDER BY created_at DESC'
+    );
+    return result.rows || [];
+  },
 
-        if (error) throw error;
-        return data || [];
-    },
+  suspendUser: async (userId) => {
+    const result = await query(
+      'UPDATE users SET is_suspended = true WHERE id = $1 RETURNING *',
+      [userId]
+    );
+    return result.rows[0];
+  },
 
-    suspendUser: async (userId) => {
-        const { data, error } = await supabase
-            .from('users')
-            .update({ is_suspended: true })
-            .eq('id', userId)
-            .select()
-            .single();
+  unsuspendUser: async (userId) => {
+    const result = await query(
+      'UPDATE users SET is_suspended = false WHERE id = $1 RETURNING *',
+      [userId]
+    );
+    return result.rows[0];
+  },
 
-        if (error) throw error;
-        return data;
-    },
+  getAllJobs: async () => {
+    const result = await query(
+      `SELECT j.*,
+              (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) AS applications_count
+       FROM jobs j ORDER BY j.created_at DESC`
+    );
+    return result.rows || [];
+  },
 
-    unsuspendUser: async (userId) => {
-        const { data, error } = await supabase
-            .from('users')
-            .update({ is_suspended: false })
-            .eq('id', userId)
-            .select()
-            .single();
+  deleteJob: async (jobId) => {
+    await query(
+      `UPDATE applications SET status = 'Rejected'
+       WHERE job_id = $1 AND status NOT IN ('Completed', 'In Progress')`,
+      [jobId]
+    );
+    await query('DELETE FROM jobs WHERE id = $1', [jobId]);
+    return true;
+  },
 
-        if (error) throw error;
-        return data;
-    },
+  getPlatformStats: async () => {
+    const usersRes = await query('SELECT id, role FROM users');
+    const jobsRes = await query('SELECT id, status FROM jobs');
+    const appsRes = await query('SELECT id, status FROM applications');
+    const reviewsCount = await query('SELECT COUNT(*) as count FROM reviews');
+    const bookingsRes = await query('SELECT id, status FROM bookings');
+    const intlJobsCount = await query('SELECT COUNT(*) as count FROM international_jobs');
 
-    // ---- JOB MODERATION ----
-    getAllJobs: async () => {
-        const { data, error } = await supabase
-            .from('jobs')
-            .select('*, applications(count)')
-            .order('created_at', { ascending: false });
+    const users = usersRes.rows || [];
+    const roleCounts = { blue_collar: 0, white_collar: 0, employer: 0, admin: 0 };
+    users.forEach(u => { if (roleCounts[u.role] !== undefined) roleCounts[u.role]++; });
 
-        if (error) throw error;
-        return data || [];
-    },
+    const jobs = jobsRes.rows || [];
+    const activeJobs = jobs.filter(j => j.status === 'Active').length;
+    const closedJobs = jobs.filter(j => j.status === 'Closed').length;
 
-    deleteJob: async (jobId) => {
-        // Reject all non-completed applications before hard-deleting the job
-        await supabase
-            .from('applications')
-            .update({ status: 'Rejected' })
-            .eq('job_id', jobId)
-            .not('status', 'in', '("Completed","In Progress")');
+    const apps = appsRes.rows || [];
+    const appStatusCounts = {};
+    apps.forEach(a => { appStatusCounts[a.status] = (appStatusCounts[a.status] || 0) + 1; });
 
-        const { error } = await supabase
-            .from('jobs')
-            .delete()
-            .eq('id', jobId);
+    const bookings = bookingsRes.rows || [];
+    const bookingStatusCounts = {};
+    bookings.forEach(b => { bookingStatusCounts[b.status] = (bookingStatusCounts[b.status] || 0) + 1; });
 
-        if (error) throw error;
-        return true;
-    },
+    return {
+      totalUsers: users.length,
+      totalJobs: jobs.length,
+      totalApplications: apps.length,
+      totalReviews: parseInt(reviewsCount.rows[0]?.count || '0'),
+      totalBookings: bookings.length,
+      totalIntlJobs: parseInt(intlJobsCount.rows[0]?.count || '0'),
+      roleCounts,
+      activeJobs,
+      closedJobs,
+      appStatusCounts,
+      bookingStatusCounts
+    };
+  },
 
-    // ---- ANALYTICS ----
-    getPlatformStats: async () => {
-        const [usersRes, jobsRes, appsRes, reviewsRes, bookingsRes, intlJobsRes] = await Promise.all([
-            supabase.from('users').select('id, role', { count: 'exact' }),
-            supabase.from('jobs').select('id, status', { count: 'exact' }),
-            supabase.from('applications').select('id, status', { count: 'exact' }),
-            supabase.from('reviews').select('id', { count: 'exact', head: true }),
-            supabase.from('bookings').select('id, status', { count: 'exact' }),
-            supabase.from('international_jobs').select('id', { count: 'exact', head: true })
-        ]);
+  getSystemLogs: async (limit = 50) => {
+    const result = await query(
+      'SELECT * FROM system_logs ORDER BY created_at DESC LIMIT $1',
+      [limit]
+    );
+    return result.rows || [];
+  },
 
-        if (usersRes.error) throw usersRes.error;
-        if (jobsRes.error) throw jobsRes.error;
-        if (appsRes.error) throw appsRes.error;
+  getPendingVerifications: async () => {
+    const result = await query(
+      `SELECT p.user_id, p.full_name, p.verification_document_url, p.verification_status, p.updated_at
+       FROM profiles p
+       WHERE p.verification_status = 'pending'
+       ORDER BY p.updated_at DESC`
+    );
+    const data = result.rows || [];
+    const enriched = await Promise.all(data.map(async (profile) => {
+      try {
+        const userResult = await query(
+          'SELECT phone, first_name, last_name, role FROM users WHERE id = $1',
+          [profile.user_id]
+        );
+        const userData = userResult.rows[0] || {};
+        return { ...profile, role: userData.role || 'unknown', users: userData };
+      } catch (e) {
+        return { ...profile, role: 'unknown', users: {} };
+      }
+    }));
+    return enriched;
+  },
 
-        // Role distribution
-        const users = usersRes.data || [];
-        const roleCounts = { blue_collar: 0, white_collar: 0, employer: 0, admin: 0 };
-        users.forEach(u => { if (roleCounts[u.role] !== undefined) roleCounts[u.role]++; });
+  updateVerificationStatus: async (userId, status) => {
+    const result = await query(
+      'UPDATE profiles SET verification_status = $1 WHERE user_id = $2 RETURNING *',
+      [status, userId]
+    );
+    return result.rows[0];
+  },
 
-        // Job status distribution
-        const jobs = jobsRes.data || [];
-        const activeJobs = jobs.filter(j => j.status === 'Active').length;
-        const closedJobs = jobs.filter(j => j.status === 'Closed').length;
-
-        // Application status distribution
-        const apps = appsRes.data || [];
-        const appStatusCounts = {};
-        apps.forEach(a => { appStatusCounts[a.status] = (appStatusCounts[a.status] || 0) + 1; });
-
-        // Booking status distribution
-        const bookings = bookingsRes.data || [];
-        const bookingStatusCounts = {};
-        bookings.forEach(b => { bookingStatusCounts[b.status] = (bookingStatusCounts[b.status] || 0) + 1; });
-
-        return {
-            totalUsers: users.length,
-            totalJobs: jobs.length,
-            totalApplications: apps.length,
-            totalReviews: reviewsRes.count || 0,
-            totalBookings: bookings.length,
-            totalIntlJobs: intlJobsRes.count || 0,
-            roleCounts,
-            activeJobs,
-            closedJobs,
-            appStatusCounts,
-            bookingStatusCounts
-        };
-    },
-
-    // ---- SYSTEM LOGS ----
-    getSystemLogs: async (limit = 50) => {
-        const { data, error } = await supabase
-            .from('system_logs')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(limit);
-
-        if (error) throw error;
-        return data || [];
-    },
-
-    // ---- VERIFICATIONS ----
-    getPendingVerifications: async () => {
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('user_id, full_name, verification_document_url, verification_status, updated_at')
-            .eq('verification_status', 'pending')
-            .order('updated_at', { ascending: false });
-
-        if (error) throw error;
-        
-        // Enrich with user info from custom users table
-        const enriched = await Promise.all((data || []).map(async (profile) => {
-            try {
-                const { data: userData } = await supabase
-                    .from('users')
-                    .select('phone, first_name, last_name, role')
-                    .eq('user_id', profile.user_id)
-                    .single();
-                
-                return { 
-                    ...profile, 
-                    role: userData?.role || 'unknown',
-                    users: userData || {} 
-                };
-            } catch (e) {
-                return { ...profile, role: 'unknown', users: {} };
-            }
-        }));
-
-        return enriched;
-    },
-
-    updateVerificationStatus: async (userId, status) => {
-        const { data, error } = await supabase
-            .from('profiles')
-            .update({ verification_status: status })
-            .eq('user_id', userId)
-            .select()
-            .single();
-
-        if (error) throw error;
-        return data;
-    },
-
-    createSystemLog: async (action, performedBy, targetType, targetId, details) => {
-        const { data, error } = await supabase
-            .from('system_logs')
-            .insert([{
-                action,
-                performed_by: performedBy,
-                target_type: targetType,
-                target_id: targetId,
-                details
-            }])
-            .select()
-            .single();
-
-        if (error) {
-            console.error('Error creating system log:', error);
-            return null;
-        }
-        return data;
+  createSystemLog: async (action, performedBy, targetType, targetId, details) => {
+    try {
+      const result = await query(
+        `INSERT INTO system_logs (action, performed_by, target_type, target_id, details)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [action, performedBy, targetType, targetId, details]
+      );
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error creating system log:', error);
+      return null;
     }
+  }
 };
 
 module.exports = adminRepository;

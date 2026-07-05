@@ -2,29 +2,13 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const { authenticateUser: authMiddleware } = require('../middleware/authMiddleware');
+const validate = require('../middleware/validate');
 const {
     validateRegistration,
     validateLogin,
     validateForgotPassword,
     validateResetPassword
 } = require('../validators/authValidators');
-const { validationResult } = require('express-validator');
-
-// Validation middleware runner
-const validate = (validations) => {
-    return async (req, res, next) => {
-        for (const validation of validations) {
-            const result = await validation.run(req);
-            if (!result.isEmpty()) break;
-        }
-
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, error: errors.array()[0].msg });
-        }
-        next();
-    };
-};
 
 /**
  * @openapi

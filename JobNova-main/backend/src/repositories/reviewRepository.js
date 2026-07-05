@@ -1,80 +1,51 @@
-const { supabaseAdmin: supabase } = require('../config/supabase');
+const { query } = require('../config/database');
 
 const reviewRepository = {
-    // Check if an application linking the two users for the job exists
-    verifyApplicationExists: async (job_id, reviewer_id, reviewee_id) => {
-        // Check if there is ANY application for this job involving either user
-        // This is a relaxed check to ensure we don't block valid reviews prematurely
-        const { data, error } = await supabase
-            .from('applications')
-            .select('status, id, applicant_id')
-            .eq('job_id', job_id);
+  verifyApplicationExists: async (job_id, reviewer_id, reviewee_id) => {
+    const result = await query(
+      'SELECT status, id, applicant_id FROM applications WHERE job_id = $1',
+      [job_id]
+    );
+    return result.rows.length > 0 ? result.rows[0] : null;
+  },
 
-        if (error) {
-            console.error(`[reviewRepository] Verification error:`, error);
-            throw error;
-        }
+  createReview: async (reviewData) => {
+    const keys = Object.keys(reviewData);
+    const cols = keys;
+    const vals = keys.map(k => reviewData[k]);
+    const placeholders = vals.map((_, i) => `$${i + 1}`);
+    const result = await query(
+      `INSERT INTO reviews (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`,
+      vals
+    );
+    return result.rows[0];
+  },
 
-        return data && data.length > 0 ? data[0] : null;
-    },
+  getReviewsByReviewee: async (revieweeId) => {
+    const result = await query('SELECT rating FROM reviews WHERE reviewee_id = $1', [revieweeId]);
+    return result.rows;
+  },
 
-    // Insert a new review
-    createReview: async (reviewData) => {
-        const { data, error } = await supabase
-            .from('reviews')
-            .insert([reviewData])
-            .select();
+  updateProfileRating: async (userId, avgRating, totalReviews) => {
+    const result = await query(
+      'UPDATE profiles SET avg_rating = $1, total_reviews = $2 WHERE user_id = $3 RETURNING *',
+      [avgRating, totalReviews, userId]
+    );
+    return result.rows[0];
+  },
 
-        if (error) throw error;
-        return data[0];
-    },
+  getFullReviewsByReviewee: async (revieweeId) => {
+    const result = await query(
+      'SELECT * FROM reviews WHERE reviewee_id = $1 ORDER BY created_at DESC',
+      [revieweeId]
+    );
+    return result.rows;
+  },
 
-    // Get all reviews for a specific user to calculate avg rating
-    getReviewsByReviewee: async (revieweeId) => {
-        const { data, error } = await supabase
-            .from('reviews')
-            .select('rating')
-            .eq('reviewee_id', revieweeId);
-
-        if (error) throw error;
-        return data; // Returns array of {rating: number}
-    },
-
-    // Update profile with new average rating
-    updateProfileRating: async (userId, avgRating, totalReviews) => {
-        const { data, error } = await supabase
-            .from('profiles')
-            .update({ avg_rating: avgRating, total_reviews: totalReviews })
-            .eq('user_id', userId)
-            .select();
-
-        if (error) throw error;
-        return data[0];
-    },
-
-    // Get detailed full reviews by a specific user
-    getFullReviewsByReviewee: async (revieweeId) => {
-        const { data, error } = await supabase
-            .from('reviews')
-            .select('*')
-            .eq('reviewee_id', revieweeId)
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        return data;
-    },
-
-    // Get single profile minimal info by user ID
-    getProfileMinimalInfo: async (userId) => {
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('user_id', userId)
-            .single();
-
-        if (error && error.code !== 'PGRST116') throw error;
-        return data;
-    }
+  getProfileMinimalInfo: async (userId) => {
+    const result = await query('SELECT role FROM profiles WHERE user_id = $1', [userId]);
+    return result.rows[0] || null;
+  }
 };
 
 module.exports = reviewRepository;

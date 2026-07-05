@@ -1,24 +1,47 @@
 const express = require('express');
 const router = express.Router();
 const jobController = require('../controllers/jobController');
+const { authenticateUser, requireRoles } = require('../middleware/authMiddleware');
+const validate = require('../middleware/validate');
+const {
+    validateCreateJob,
+    validateGetJobs,
+    validateNearbyJobs,
+    validateApplyJob,
+    validateUpdateApplicationStatus,
+    validateJobId
+} = require('../validators/jobValidators');
 
-const { authenticateUser } = require('../middleware/authMiddleware'); // Assuming this exists
+// Public routes
+router.get('/public', validate(validateGetJobs), jobController.getJobs);
 
-// Public-ish routes (Protected by login)
-router.get('/public', jobController.getJobs); // Completely public for landing page
-router.get('/', authenticateUser, jobController.getJobs);
-router.get('/match', authenticateUser, jobController.getMatchedJobs); // New matching route
-router.get('/nearby', authenticateUser, jobController.getNearbyJobs); // New map-based search
-router.post('/', authenticateUser, jobController.createJob);
-router.delete('/:id', authenticateUser, jobController.deleteJob);
-router.post('/:id/apply', authenticateUser, jobController.applyForJob);
+// Protected routes
+router.get('/', authenticateUser, validate(validateGetJobs), jobController.getJobs);
+router.get('/match', authenticateUser, validate(validateGetJobs), jobController.getMatchedJobs);
+router.get('/nearby', authenticateUser, validate(validateNearbyJobs), jobController.getNearbyJobs);
 
-// Application Management
-router.put('/applications/:id/status', authenticateUser, jobController.updateApplicationStatus);
+// Employer routes
+router.post(
+    '/',
+    authenticateUser,
+    requireRoles('employer', 'admin'),
+    validate(validateCreateJob),
+    jobController.createJob
+);
+router.delete('/:id', authenticateUser, validate(validateJobId), jobController.deleteJob);
+router.get('/my-jobs', authenticateUser, requireRoles('employer', 'admin'), jobController.getMyJobs);
+router.get('/:id/applications', authenticateUser, validate(validateJobId), jobController.getJobApplications);
+
+// Job seeker routes
+router.post('/:id/apply', authenticateUser, validate(validateApplyJob), jobController.applyForJob);
 router.get('/applications/my-applications', authenticateUser, jobController.getWorkerApplications);
-router.get('/:id/applications', authenticateUser, jobController.getJobApplications);
 
-// Employer specific
-router.get('/my-jobs', authenticateUser, jobController.getMyJobs);
+// Application management
+router.put(
+    '/applications/:id/status',
+    authenticateUser,
+    validate(validateUpdateApplicationStatus),
+    jobController.updateApplicationStatus
+);
 
 module.exports = router;
