@@ -27,7 +27,11 @@
     "express-validator": "^7.3.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.0",
-    "pdf-parse": "^2.4.5"
+    "nodemailer": "^9.0.3",
+    "pdf-parse": "^2.4.5",
+    "socket.io": "^4.8.3",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

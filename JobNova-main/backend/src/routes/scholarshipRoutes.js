@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/scholarships/admin - Fetch all scholarships (for admin)
-router.get('/admin', async (req, res) => {
+router.get('/admin', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('scholarships')
@@ -68,7 +68,7 @@ router.post('/', authenticateUser, requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/scholarships/:id - Delete a scholarship
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { error } = await supabase
@@ -144,7 +144,7 @@ router.get('/my-applications', authenticateUser, async (req, res) => {
 });
 
 // GET /api/scholarships/:id/applicants - Get applicants for a specific scholarship (Admin)
-router.get('/:id/applicants', async (req, res) => {
+router.get('/:id/applicants', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         // Using service role to bypass RLS and fetch users data directly from profiles or auth

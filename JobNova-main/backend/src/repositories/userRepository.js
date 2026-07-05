@@ -21,6 +21,16 @@ const userRepository = {
         return data;
     },
 
+    findByEmail: async (email) => {
+        const { data, error } = await supabaseAdmin
+            .from('users')
+            .select('*')
+            .eq('email', email)
+            .single();
+        if (error && error.code !== 'PGRST116') throw error;
+        return data;
+    },
+
     createUser: async ({ user_id, phone, password_hash, role, first_name, last_name }) => {
         const { data, error } = await supabaseAdmin
             .from('users')

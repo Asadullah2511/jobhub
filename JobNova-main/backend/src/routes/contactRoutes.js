@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const { authenticateUser, requireAdmin } = require('../middleware/authMiddleware');
 
 // POST /api/contact - Submit a contact message
 router.post('/', async (req, res) => {
@@ -31,8 +32,8 @@ router.post('/', async (req, res) => {
     }
 });
 
-// GET /api/contact - Get all messages (Admin only, later we can add auth middleware)
-router.get('/', async (req, res) => {
+// GET /api/contact - Get all messages (Admin only)
+router.get('/', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('contact_messages')
@@ -49,7 +50,7 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/contact/:id/status - Update message status (Admin only)
-router.put('/:id/status', async (req, res) => {
+router.put('/:id/status', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body; // Expects 'Unread', 'Read', or 'Resolved'

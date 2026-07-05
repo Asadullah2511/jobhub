@@ -5,10 +5,11 @@ const { supabaseAdmin } = require('../config/supabase');
 const { authenticateUser } = require('../middleware/authMiddleware');
 
 // Create a travel announcement
-router.post('/', async (req, res) => {
-    const { user_id, from_city, to_city, travel_date_start, travel_date_end, available_for_work, skills } = req.body;
+router.post('/', authenticateUser, async (req, res) => {
+    const { from_city, to_city, travel_date_start, travel_date_end, available_for_work, skills } = req.body;
+    const user_id = req.user.id;
 
-    if (!user_id || !from_city || !to_city || !travel_date_start || !travel_date_end) {
+    if (!from_city || !to_city || !travel_date_start || !travel_date_end) {
         return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
 
@@ -128,10 +129,25 @@ router.get('/user/:userId', async (req, res) => {
 });
 
 // Delete an announcement
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateUser, async (req, res) => {
     const { id } = req.params;
 
     try {
+        // Verify ownership
+        const { data: exchange, error: fetchError } = await supabaseAdmin
+            .from('time_exchanges')
+            .select('user_id')
+            .eq('id', id)
+            .single();
+
+        if (fetchError || !exchange) {
+            return res.status(404).json({ success: false, error: 'Announcement not found' });
+        }
+
+        if (exchange.user_id !== req.user.id) {
+            return res.status(403).json({ success: false, error: 'Unauthorized' });
+        }
+
         const { error } = await supabaseAdmin
             .from('time_exchanges')
             .delete()
@@ -196,7 +212,7 @@ router.post('/hire', authenticateUser, async (req, res) => {
 });
 
 // GET /api/time-exchange/requests/:worker_id — Worker fetches their incoming requests
-router.get('/requests/:worker_id', async (req, res) => {
+router.get('/requests/:worker_id', authenticateUser, async (req, res) => {
     const { worker_id } = req.params;
 
     try {
@@ -219,7 +235,7 @@ router.get('/requests/:worker_id', async (req, res) => {
 });
 
 // PATCH /api/time-exchange/requests/:id/status — Worker accepts or rejects
-router.patch('/requests/:id/status', async (req, res) => {
+router.patch('/requests/:id/status', authenticateUser, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body; // 'Accepted' or 'Rejected'
 

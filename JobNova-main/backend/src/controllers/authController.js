@@ -47,6 +47,26 @@ const authController = {
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
         }
+    },
+
+    forgotPassword: async (req, res) => {
+        try {
+            const { email } = req.body;
+            await authService.forgotPassword(email);
+            res.json({ success: true, message: 'If an account with that email exists, a password reset link has been sent.' });
+        } catch (error) {
+            res.status(400).json({ success: false, message: error.message });
+        }
+    },
+
+    resetPassword: async (req, res) => {
+        try {
+            const { token, new_password } = req.body;
+            await authService.resetPassword(token, new_password);
+            res.json({ success: true, message: 'Password has been reset successfully.' });
+        } catch (error) {
+            res.status(400).json({ success: false, message: error.message });
+        }
     }
 };
 

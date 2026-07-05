@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const { authenticateUser, requireAdmin } = require('../middleware/authMiddleware');
 const notificationService = require('../services/notificationService');
 
 
@@ -39,11 +40,12 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/international-jobs — Employer creates a new international job
-router.post('/', async (req, res) => {
+router.post('/', authenticateUser, async (req, res) => {
     try {
-        const { employer_id, title, description, country, city, salary, currency, visa_sponsored, type, requirements, benefits } = req.body;
+        const { title, description, country, city, salary, currency, visa_sponsored, type, requirements, benefits } = req.body;
+        const employer_id = req.user.id;
 
-        if (!employer_id || !title || !country || !type) {
+        if (!title || !country || !type) {
             return res.status(400).json({ success: false, error: 'Title, country, and type are required' });
         }
 
@@ -77,9 +79,23 @@ router.post('/', async (req, res) => {
 });
 
 // DELETE /api/international-jobs/:id — Employer deletes their own listing
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateUser, async (req, res) => {
     try {
         const { id } = req.params;
+
+        const { data: job, error: fetchError } = await supabase
+            .from('international_jobs')
+            .select('employer_id')
+            .eq('id', id)
+            .single();
+
+        if (fetchError || !job) {
+            return res.status(404).json({ success: false, error: 'Job not found' });
+        }
+
+        if (job.employer_id !== req.user.id) {
+            return res.status(403).json({ success: false, error: 'Unauthorized' });
+        }
 
         const { error } = await supabase
             .from('international_jobs')
@@ -96,15 +112,10 @@ router.delete('/:id', async (req, res) => {
 });
 
 // POST /api/international-jobs/:id/apply — Worker applies for an international job
-router.post('/:id/apply', async (req, res) => {
+router.post('/:id/apply', authenticateUser, async (req, res) => {
     try {
         const { id } = req.params;
-        const { applicant_id } = req.body; 
-        
-        
-        if (!applicant_id) {
-                        return res.status(400).json({ success: false, error: 'Applicant ID is required' });
-        }
+        const applicant_id = req.user.id;
 
         const { data, error } = await supabase
             .from('international_job_applications')
@@ -139,7 +150,7 @@ router.post('/:id/apply', async (req, res) => {
 });
 
 // GET /api/international-jobs/employer/:employer_id — Fetch employer's active international jobs
-router.get('/employer/:employer_id', async (req, res) => {
+router.get('/employer/:employer_id', authenticateUser, async (req, res) => {
     try {
         const { employer_id } = req.params;
 
@@ -159,9 +170,23 @@ router.get('/employer/:employer_id', async (req, res) => {
 });
 
 // GET /api/international-jobs/:id/applications — Fetch all applicants for a specific job
-router.get('/:id/applications', async (req, res) => {
+router.get('/:id/applications', authenticateUser, async (req, res) => {
     try {
         const { id } = req.params;
+
+        const { data: job, error: jobErr } = await supabase
+            .from('international_jobs')
+            .select('employer_id')
+            .eq('id', id)
+            .single();
+
+        if (jobErr || !job) {
+            return res.status(404).json({ success: false, error: 'Job not found' });
+        }
+
+        if (job.employer_id !== req.user.id) {
+            return res.status(403).json({ success: false, error: 'Unauthorized' });
+        }
 
         const { data: apps, error } = await supabase
             .from('international_job_applications')
@@ -206,7 +231,7 @@ router.get('/:id/applications', async (req, res) => {
 });
 
 // PUT /api/international-jobs/applications/:appId/status — Update application status
-router.put('/applications/:appId/status', async (req, res) => {
+router.put('/applications/:appId/status', authenticateUser, async (req, res) => {
     try {
         const { appId } = req.params;
         const { status } = req.body;
