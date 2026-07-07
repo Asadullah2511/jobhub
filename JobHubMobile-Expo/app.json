@@ -22,11 +22,6 @@
         "WRITE_EXTERNAL_STORAGE"
       ]
     },
-    "web": {},
-    "plugins": [
-      "expo-location",
-      "expo-image-picker",
-      "expo-document-picker"
-    ]
+    "web": {}
   }
 }
