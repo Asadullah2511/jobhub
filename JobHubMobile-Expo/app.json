@@ -5,23 +5,17 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "updates": {
+      "enabled": false
+    },
+    "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.jobhub.mobile"
+      "supportsTablet": true
     },
     "android": {
-      "package": "com.jobhub.mobile",
-      "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
-      ]
-    },
-    "web": {}
+      "adaptiveIcon": {
+        "backgroundColor": "#2196F3"
+      }
+    }
   }
 }

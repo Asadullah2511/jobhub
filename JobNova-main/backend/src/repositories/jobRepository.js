@@ -50,7 +50,8 @@ const jobRepository = {
     // Count total for pagination
     let total = 0;
     if (pagination) {
-      const countSql = sql.replace('SELECT *', 'SELECT COUNT(*)');
+      // Remove ORDER BY from count query
+      const countSql = sql.replace('SELECT *', 'SELECT COUNT(*)').replace(/ORDER BY.*$/, '');
       const countResult = await query(countSql, params);
       total = parseInt(countResult.rows[0].count);
 
