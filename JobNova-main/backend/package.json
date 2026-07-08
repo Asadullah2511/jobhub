@@ -1,7 +1,7 @@
 {
-  "name": "jobnova-backend",
+  "name": "jobhub-backend",
   "version": "1.0.0",
-  "description": "JobNova - AI-Ready Job Platform Backend",
+  "description": "JobHub - AI-Ready Job Platform Backend",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -11,7 +11,7 @@
     "db:test": "node test-db-connection.js"
   },
   "keywords": [
-    "jobnova",
+    "jobhub",
     "jobs",
     "employment",
     "supabase"

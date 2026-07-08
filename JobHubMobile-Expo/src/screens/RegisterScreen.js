@@ -86,10 +86,32 @@ export default function RegisterScreen({ navigation }) {
       // User is automatically logged in after registration (AuthContext handles navigation)
       Alert.alert('Success', 'Welcome to JobHub! You are now logged in.');
     } catch (error) {
-      Alert.alert(
-        'Registration Failed',
-        error.response?.data?.message || 'Unable to register. Please try again.'
-      );
+      console.error('Registration error:', error);
+
+      let errorMessage = 'Unable to register. Please try again.';
+
+      if (error.response) {
+        // Server responded with error
+        const serverMessage = error.response.data?.message || error.response.data?.error;
+        if (serverMessage) {
+          errorMessage = serverMessage;
+
+          // Add helpful hints for common errors
+          if (serverMessage.includes('User ID already taken')) {
+            errorMessage += '\n\nPlease choose a different user ID.';
+          } else if (serverMessage.includes('Phone number already registered')) {
+            errorMessage += '\n\nThis phone is already registered. Try logging in instead.';
+          }
+        }
+      } else if (error.request) {
+        // No response from server
+        errorMessage = 'Cannot connect to server. Please check:\n\n1. Backend is running\n2. You\'re on the same network\n3. Try restarting the app';
+      } else {
+        // Other errors
+        errorMessage = error.message || errorMessage;
+      }
+
+      Alert.alert('Registration Failed', errorMessage);
     } finally {
       setLoading(false);
     }
