@@ -1,135 +1,11 @@
 const express = require('express');
-const router = express.Router();
-const authController = require('../controllers/authController');
-const { authenticateUser: authMiddleware } = require('../middleware/authMiddleware');
-const validate = require('../middleware/validate');
-const {
-    validateRegistration,
-    validateLogin,
-    validateForgotPassword,
-    validateResetPassword
-} = require('../validators/authValidators');
-
-/**
- * @openapi
- * /auth/register:
- *   post:
- *     tags: [Auth]
- *     summary: Register a new user
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [user_id, password, role, first_name, last_name]
- *             properties:
- *               user_id:
- *                 type: string
- *               phone:
- *                 type: string
- *               password:
- *                 type: string
- *               role:
- *                 type: string
- *                 enum: [blue_collar, white_collar, employer, admin]
- *               first_name:
- *                 type: string
- *               last_name:
- *                 type: string
- *     responses:
- *       201:
- *         description: Registration successful
- *       400:
- *         description: Validation error
- */
-// Public Routes
-router.post('/register', validate(validateRegistration), authController.register);
-/**
- * @openapi
- * /auth/login:
- *   post:
- *     tags: [Auth]
- *     summary: Login with user_id or phone
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [identifier, password]
- *             properties:
- *               identifier:
- *                 type: string
- *               password:
- *                 type: string
- *     responses:
- *       200:
- *         description: Login successful
- *       401:
- *         description: Invalid credentials
- */
-router.post('/login', validate(validateLogin), authController.login);
-/**
- * @openapi
- * /auth/forgot-password:
- *   post:
- *     tags: [Auth]
- *     summary: Request password reset email
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [email]
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *     responses:
- *       200:
- *         description: Reset link sent (if account exists)
- */
-router.post('/forgot-password', validate(validateForgotPassword), authController.forgotPassword);
-/**
- * @openapi
- * /auth/reset-password:
- *   post:
- *     tags: [Auth]
- *     summary: Reset password with token
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [token, new_password]
- *             properties:
- *               token:
- *                 type: string
- *               new_password:
- *                 type: string
- *                 minLength: 6
- *     responses:
- *       200:
- *         description: Password reset successful
- *       400:
- *         description: Invalid or expired token
- */
-router.post('/reset-password', validate(validateResetPassword), authController.resetPassword);
-
-// Protected Routes
-router.get('/profile', authMiddleware, authController.getProfile); // Kept for AuthContext compatibility
-
-// ========================================
-// PHASE 1: Mobile App OTP & Role Selection
-// ========================================
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 const { sendOTP, verifyOTP } = require('../services/otpService');
 const { body, validationResult } = require('express-validator');
+
+const router = express.Router();
 
 /**
  * @route   POST /api/auth/send-otp
@@ -152,8 +28,11 @@ router.post('/send-otp',
       }
 
       const { phone } = req.body;
+
+      // Send OTP
       const result = await sendOTP(phone);
 
+      // In dev mode, include OTP in response for testing
       const response = {
         success: true,
         message: 'OTP sent successfully',
@@ -161,10 +40,11 @@ router.post('/send-otp',
       };
 
       if (result.otp) {
-        response.otp = result.otp; // Only in dev mode
+        response.otp = result.otp; // Only in dev mode when Twilio not configured
       }
 
       res.json(response);
+
     } catch (error) {
       console.error('❌ Send OTP error:', error);
       res.status(500).json({
@@ -196,6 +76,8 @@ router.post('/verify-otp',
       }
 
       const { phone, otp } = req.body;
+
+      // Verify OTP
       const otpResult = await verifyOTP(phone, otp);
 
       if (!otpResult.success) {
@@ -232,13 +114,14 @@ router.post('/verify-otp',
 
         userResult = await query(
           `INSERT INTO users (user_id, phone, role, is_profile_completed, role_selected)
-           VALUES ($1, $2, $3, false, true)
+           VALUES ($1, $2, $3, false, false)
            RETURNING *`,
           [userId, cleanPhone, 'blue_collar']
         );
 
         user = userResult.rows[0];
         isNewUser = true;
+
         console.log(`✅ New blue collar user registered: ${userId}`);
       } else {
         user = userResult.rows[0];
@@ -251,7 +134,7 @@ router.post('/verify-otp',
           id: user.id,
           role: user.role
         },
-        process.env.JWT_SECRET,
+        process.env.JWT_SECRET || 'jobnova_jwt_secret_key_change_in_production',
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
 
@@ -306,6 +189,7 @@ router.post('/login-email',
 
       const { email, password } = req.body;
 
+      // Find user by email
       const userResult = await query(
         'SELECT * FROM users WHERE email = $1',
         [email.toLowerCase()]
@@ -319,6 +203,8 @@ router.post('/login-email',
       }
 
       const user = userResult.rows[0];
+
+      // Verify password
       const isMatch = await bcrypt.compare(password, user.password_hash);
 
       if (!isMatch) {
@@ -328,6 +214,7 @@ router.post('/login-email',
         });
       }
 
+      // Check if account is suspended
       if (user.is_suspended) {
         return res.status(403).json({
           success: false,
@@ -335,13 +222,14 @@ router.post('/login-email',
         });
       }
 
+      // Generate JWT
       const token = jwt.sign(
         {
           userId: user.user_id,
           id: user.id,
           role: user.role
         },
-        process.env.JWT_SECRET,
+        process.env.JWT_SECRET || 'jobnova_jwt_secret_key_change_in_production',
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
 
@@ -398,6 +286,7 @@ router.post('/register-email',
 
       const { email, password, first_name, last_name, role } = req.body;
 
+      // Check if email already exists
       const existingUser = await query(
         'SELECT id FROM users WHERE email = $1',
         [email.toLowerCase()]
@@ -410,25 +299,30 @@ router.post('/register-email',
         });
       }
 
+      // Hash password
       const passwordHash = await bcrypt.hash(password, 10);
+
+      // Generate user_id
       const userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 
+      // Create user
       const result = await query(
         `INSERT INTO users (user_id, email, password_hash, first_name, last_name, role, is_profile_completed, role_selected)
-         VALUES ($1, $2, $3, $4, $5, $6, false, true)
+         VALUES ($1, $2, $3, $4, $5, $6, false, false)
          RETURNING *`,
         [userId, email.toLowerCase(), passwordHash, first_name, last_name, role]
       );
 
       const user = result.rows[0];
 
+      // Generate JWT
       const token = jwt.sign(
         {
           userId: user.user_id,
           id: user.id,
           role: user.role
         },
-        process.env.JWT_SECRET,
+        process.env.JWT_SECRET || 'jobnova_jwt_secret_key_change_in_production',
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
 
@@ -468,12 +362,23 @@ router.post('/register-email',
  * @access  Private
  */
 router.put('/select-role',
-  authMiddleware,
   [
     body('role').isIn(['blue_collar', 'white_collar', 'employer']).withMessage('Invalid role')
   ],
   async (req, res) => {
     try {
+      // Get user from JWT (assuming auth middleware is applied)
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+          success: false,
+          message: 'No token provided'
+        });
+      }
+
+      const token = authHeader.substring(7);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'jobnova_jwt_secret_key_change_in_production');
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -483,14 +388,14 @@ router.put('/select-role',
       }
 
       const { role } = req.body;
-      const userId = req.user.id;
 
+      // Update user role
       const result = await query(
         `UPDATE users
          SET role = $1, role_selected = true
          WHERE id = $2
          RETURNING *`,
-        [role, userId]
+        [role, decoded.id]
       );
 
       if (result.rows.length === 0) {
@@ -502,13 +407,14 @@ router.put('/select-role',
 
       const user = result.rows[0];
 
+      // Generate new token with updated role
       const newToken = jwt.sign(
         {
           userId: user.user_id,
           id: user.id,
           role: user.role
         },
-        process.env.JWT_SECRET,
+        process.env.JWT_SECRET || 'jobnova_jwt_secret_key_change_in_production',
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
 
@@ -527,6 +433,13 @@ router.put('/select-role',
       });
 
     } catch (error) {
+      if (error.name === 'JsonWebTokenError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid token'
+        });
+      }
+
       console.error('❌ Select role error:', error);
       res.status(500).json({
         success: false,

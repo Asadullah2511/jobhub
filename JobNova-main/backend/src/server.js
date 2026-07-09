@@ -95,6 +95,10 @@ app.use('/api/international-jobs', require('./routes/internationalJobRoutes'));
 app.use('/api/time-exchange', require('./routes/timeExchangeRoutes'));
 app.use('/api/bookings', require('./routes/bookingRoutes'));
 
+// Phase 1: Mobile App Routes
+app.use('/api/applications', require('./routes/applicationsRoutes'));
+app.use('/api/reviews-phase1', require('./routes/reviewsRoutes')); // Phase 1 immutable reviews
+
 // API Versioning � v1 (parallel mount, same handlers)
 app.use('/api/v1', require('./routes/v1'));
 
