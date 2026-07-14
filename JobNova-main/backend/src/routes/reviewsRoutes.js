@@ -1,12 +1,12 @@
 const express = require('express');
 const { query } = require('../config/database');
 const { body, validationResult } = require('express-validator');
-const authMiddleware = require('../middleware/authMiddleware');
+const { authenticateUser } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 // Apply auth middleware
-router.use(authMiddleware);
+router.use(authenticateUser);
 
 /**
  * @route   POST /api/reviews

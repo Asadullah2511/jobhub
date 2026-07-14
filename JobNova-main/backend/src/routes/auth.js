@@ -468,7 +468,7 @@ router.post('/register-email',
  * @access  Private
  */
 router.put('/select-role',
-  authMiddleware,
+  authMiddleware, // This is already imported as { authenticateUser: authMiddleware }
   [
     body('role').isIn(['blue_collar', 'white_collar', 'employer']).withMessage('Invalid role')
   ],
