@@ -1,7 +1,7 @@
 {
-  "name": "jobnova-backend",
+  "name": "jobhub-backend",
   "version": "1.0.0",
-  "description": "JobNova - AI-Ready Job Platform Backend",
+  "description": "JobHub - AI-Ready Job Platform Backend",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -11,7 +11,7 @@
     "db:test": "node test-db-connection.js"
   },
   "keywords": [
-    "jobnova",
+    "jobhub",
     "jobs",
     "employment",
     "supabase"
@@ -37,7 +37,8 @@
     "pg": "^8.22.0",
     "socket.io": "^4.8.3",
     "swagger-jsdoc": "^6.3.0",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "twilio": "^6.0.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

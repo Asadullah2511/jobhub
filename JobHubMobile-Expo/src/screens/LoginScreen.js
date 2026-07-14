@@ -28,8 +28,24 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     try {
       await login(identifier, password);
+      // Success! AuthContext will handle navigation
     } catch (error) {
-      Alert.alert('Login Failed', error.response?.data?.message || 'Invalid credentials');
+      console.error('Login error:', error);
+
+      let errorMessage = 'Unable to login. Please try again.';
+
+      if (error.response) {
+        // Server responded with error
+        errorMessage = error.response.data?.message || error.response.data?.error || errorMessage;
+      } else if (error.request) {
+        // No response from server
+        errorMessage = 'Cannot connect to server. Please check:\n\n1. Backend is running\n2. You\'re on the same network\n3. Try restarting the app';
+      } else {
+        // Other errors
+        errorMessage = error.message || errorMessage;
+      }
+
+      Alert.alert('Login Failed', errorMessage);
     } finally {
       setLoading(false);
     }

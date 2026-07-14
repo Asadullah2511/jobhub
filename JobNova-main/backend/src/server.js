@@ -65,7 +65,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
-        message: 'JobNova API is running',
+        message: 'JobHub API is running',
         timestamp: new Date().toISOString()
     });
 });
@@ -95,6 +95,10 @@ app.use('/api/international-jobs', require('./routes/internationalJobRoutes'));
 app.use('/api/time-exchange', require('./routes/timeExchangeRoutes'));
 app.use('/api/bookings', require('./routes/bookingRoutes'));
 
+// Phase 1: Mobile App Routes
+app.use('/api/applications', require('./routes/applicationsRoutes'));
+app.use('/api/reviews-phase1', require('./routes/reviewsRoutes')); // Phase 1 immutable reviews
+
 // API Versioning � v1 (parallel mount, same handlers)
 app.use('/api/v1', require('./routes/v1'));
 
@@ -102,7 +106,7 @@ app.use('/api/v1', require('./routes/v1'));
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./docs/swagger');
 app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-    customSiteTitle: 'JobNova API Docs'
+    customSiteTitle: 'JobHub API Docs'
 }));
 
 // 404 handler (must be before error handler)
@@ -133,7 +137,7 @@ if (process.env.VERCEL !== '1') {
         await testConnection();
 
         server.listen(PORT, () => {
-            console.log('JobNova Server running on port ' + PORT);
+            console.log('JobHub Server running on port ' + PORT);
             console.log('API available at http://localhost:' + PORT + '/api');
             console.log('Socket.IO ready at http://localhost:' + PORT + '/socket.io');
             console.log('Swagger docs at http://localhost:' + PORT + '/api/v1/docs');

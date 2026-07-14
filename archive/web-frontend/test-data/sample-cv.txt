@@ -1,0 +1,23 @@
+JOHN DOE
+Senior Software Engineer
+
+EXPERIENCE:
+Five years of experience in web development
+
+SKILLS:
+- React
+- Node.js
+- JavaScript
+- Python
+- Docker
+- AWS
+- MongoDB
+- PostgreSQL
+
+EDUCATION:
+Bachelor's Degree in Computer Science
+University of Technology, 2018
+
+CERTIFICATIONS:
+- AWS Certified Solutions Architect
+- Scrum Master Certified

@@ -8,7 +8,9 @@
     "updates": {
       "enabled": false
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true
     },
@@ -16,6 +18,9 @@
       "adaptiveIcon": {
         "backgroundColor": "#2196F3"
       }
-    }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }
